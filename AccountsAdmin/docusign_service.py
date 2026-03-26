@@ -129,3 +129,27 @@ class DocuSignService:
 
         return urls
 
+    def download_envelope_document(self, envelope_id: str) -> bytes:
+        """Retrieves the fully signed PDF from DocuSign using the envelope ID."""
+        access_token = self._get_access_token()
+
+        api_client = ApiClient()
+        api_client.host = self.base_path
+        api_client.set_default_header("Authorization", f"Bearer {access_token}")
+
+        envelopes_api = EnvelopesApi(api_client)
+
+        # 'combined' retrieves all documents in the envelope merged into one PDF
+        # This includes the RE-21 and the Summary/Audit trail
+        temp_file_path = envelopes_api.get_document(
+            account_id=self.account_id,
+            document_id="combined",
+            envelope_id=envelope_id
+        )
+
+        # Read the temp file into bytes and return it
+        with open(temp_file_path, "rb") as f:
+            pdf_bytes = f.read()
+
+        return pdf_bytes
+

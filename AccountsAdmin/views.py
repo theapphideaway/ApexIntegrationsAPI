@@ -1,15 +1,19 @@
+import base64
 import os
 
 from django.http import HttpResponse
 from django.shortcuts import render
 from django.utils import timezone
+from django.views.decorators.csrf import csrf_exempt
+from docusign_esign import EnvelopesApi, ApiClient
+from rest_framework.permissions import AllowAny
 from rest_framework.views import APIView
 
 from .docusign_service import DocuSignService
 from .pdf_service import PDFGenerationService
 # Create your views here.
 
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -277,6 +281,89 @@ class RE21CreateSignatureLinkEndpoint(APIView):
             # This will return { "buyer1_signing_url": "...", "buyer2_signing_url": "..." }
             # If there's no Buyer 2, the buyer2_signing_url will be an empty string
             return Response(signing_urls, status=200)
+
+        except Exception as e:
+            return Response({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+@api_view(['POST'])
+@permission_classes([AllowAny])  # DocuSign needs to hit this without a login
+def docusign_webhook(request):
+    data = request.data
+
+    # 1. Check the status
+    event = data.get("event")
+    if event == "envelope-completed":
+        envelope_id = data.get("data", {}).get("envelopeId")
+        print(f"DEBUG: Envelope {envelope_id} is FULLY SIGNED!")
+
+        # 2. Extract the signed PDF
+        # DocuSign Connect can be configured to include the document as a base64 string
+        documents = data.get("data", {}).get("envelopeSummary", {}).get("documents", [])
+
+        if documents:
+            signed_pdf_b64 = documents[0].get("PDFBytes")
+            pdf_bytes = base64.b64decode(signed_pdf_b64)
+
+            # 3. Save the file locally for now
+            file_name = f"signed_re21_{envelope_id}.pdf"
+            file_path = os.path.join('media', 'signed_contracts', file_name)
+
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            with open(file_path, "wb") as f:
+                f.write(pdf_bytes)
+
+            print(f"DEBUG: Successfully saved signed contract to {file_path}")
+
+            # TODO: Trigger an email to the agent or a push notification to iOS
+
+    return Response({"status": "received"}, status=200)
+
+
+class RE21ContractStatusEndpoint(APIView):
+    def get(self, request, envelope_id, *args, **kwargs):
+        """
+        GET /api/contracts/status/<envelope_id>/
+        Checks if the contract is signed and returns the status.
+        """
+        try:
+            ds_service = DocuSignService()
+
+            # 1. Fetch Envelope Details from DocuSign
+            # We'll use the SDK's built-in call to check status
+            access_token = ds_service._get_access_token()
+            api_client = ApiClient()
+            api_client.host = ds_service.base_path
+            api_client.set_default_header("Authorization", f"Bearer {access_token}")
+
+            envelopes_api = EnvelopesApi(api_client)
+            envelope = envelopes_api.get_envelope(
+                account_id=ds_service.account_id,
+                envelope_id=envelope_id
+            )
+
+            current_status = envelope.status  # e.g., 'sent', 'delivered', 'completed'
+
+            # 2. If completed, make sure we have the file
+            if current_status == "completed":
+                # Check if we already have it in media/
+                file_name = f"signed_re21_{envelope_id}.pdf"
+                file_path = os.path.join('media', 'signed_contracts', file_name)
+
+                if not os.path.exists(file_path):
+                    # Manual Pull Triggered
+                    pdf_bytes = ds_service.download_envelope_document(envelope_id)
+                    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+                    with open(file_path, "wb") as f:
+                        f.write(pdf_bytes)
+
+            return Response({
+                "envelope_id": envelope_id,
+                "status": current_status,
+                "is_completed": current_status == "completed",
+                "pdf_url": f"/media/signed_contracts/signed_re21_{envelope_id}.pdf" if current_status == "completed" else None
+            }, status=200)
 
         except Exception as e:
             return Response({"error": str(e)}, status=500)

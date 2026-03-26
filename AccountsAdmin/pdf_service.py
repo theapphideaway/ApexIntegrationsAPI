@@ -533,15 +533,15 @@ class PDFGenerationService:
         buyer_names = [n.strip() for n in re.split(r'\s+and\s+', raw_buyer_name, flags=re.IGNORECASE)]
         initial_offsets = [1, 5, 9, 13, 17, 21, 25, 29, 33, 37]
 
-        # Map Buyer 1 Initials
         for num in initial_offsets:
+            # Buyer 1 & 2 (Current Signers)
             map[f"DocuSignSignHere_{num}"] = "\\i1\\"
-
-        # Map Buyer 2 Initials (Only if a second buyer exists)
-        if len(buyer_names) > 1:
-            for num in initial_offsets:
-                # Adding 1 to the offset to target the Buyer 2 fields
+            if len(buyer_names) > 1:
                 map[f"DocuSignSignHere_{num + 1}"] = "\\i2\\"
+
+            # Seller 1 & 2 (Pre-Tagging for the next agent)
+            map[f"DocuSignSignHere_{num + 2}"] = "\\i3\\"
+            map[f"DocuSignSignHere_{num + 3}"] = "\\i4\\"
         # Buyer 2 logic
         if len(buyer_names) > 1:
             map["BUYER Print Name_2"] = buyer_names[1]
@@ -551,6 +551,10 @@ class PDFGenerationService:
             map["BUYER Print Name_2"] = ""
             map["DocuSignHere_2"] = "\\s2\\"
             print("DEBUG: Only one buyer detected.")
+
+        # Seller Signatures (Note: check your Acrobat case-sensitivity for 'DocuSign' vs 'Docusign')
+        map["DocuSignHere3"] = "\\s3\\"
+        map["DocuSignHere4"] = "\\s4\\"
 
         return map
 

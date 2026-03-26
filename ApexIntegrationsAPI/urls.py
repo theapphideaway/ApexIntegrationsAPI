@@ -17,7 +17,8 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path, include
 
-from AccountsAdmin.views import RE21PreviewEndpoint, RE21CreateSignatureLinkEndpoint
+from AccountsAdmin.views import RE21PreviewEndpoint, RE21CreateSignatureLinkEndpoint, docusign_webhook, \
+    RE21ContractStatusEndpoint
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -28,5 +29,7 @@ urlpatterns = [
     # (like 'AccountsAdmin.urls')
     path('api/auth/', include('AccountsAdmin.urls')),
     path('api/contracts/preview-re21/', RE21PreviewEndpoint.as_view(), name='preview_re21'),
-    path('api/contracts/create-signing-link/', RE21CreateSignatureLinkEndpoint.as_view(), name='create_signing_link'), # <-- Add the route
+    path('api/contracts/create-signing-link/', RE21CreateSignatureLinkEndpoint.as_view(), name='create_signing_link'),
+    path('api/contracts/webhook/', docusign_webhook, name='docusign_webhook'),
+    path('api/contracts/status/<str:envelope_id>/', RE21ContractStatusEndpoint.as_view(), name='contract_status'),
 ]
