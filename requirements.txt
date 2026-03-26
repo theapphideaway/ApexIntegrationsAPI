@@ -3,3 +3,5 @@ djangorestframework~=3.14.0
 djangorestframework-simplejwt
 PyMuPDF
 num2words
+docusign-esign
+python-dotenv
