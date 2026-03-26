@@ -42,14 +42,12 @@ class PDFGenerationService:
                         rect = annot.rect
                         widgets_to_delete.append(annot)  # Mark for safe deletion
 
-                        # Add a FreeText annotation for the DocuSign parser
-                        page.add_freetext_annot(
+                        # Write raw text directly into the PDF's base ink layer
+                        page.insert_textbox(
                             rect,
                             value_to_insert,
                             fontsize=10,
-                            text_color=(0, 0, 0),  # Keep black for testing. Change to (1,1,1) later.
-                            fill_color=None,
-                            border_color=None
+                            color=(1, 1, 1)  
                         )
                         continue
 
@@ -520,7 +518,7 @@ class PDFGenerationService:
         map["Zip"] = data.get("propertyZip", "")
         map["Fax_3"] = ""
 
-        map["DocuSignHere_1"] = r"\s1\""
+        map["DocuSignHere_1"] = "\\s1\\"
 
         return map
 

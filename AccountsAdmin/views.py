@@ -5,6 +5,7 @@ from django.shortcuts import render
 from django.utils import timezone
 from rest_framework.views import APIView
 
+from .docusign_service import DocuSignService
 from .pdf_service import PDFGenerationService
 # Create your views here.
 
@@ -245,3 +246,32 @@ class RE21PreviewEndpoint(APIView):
             return Response({"error": str(e)}, status=404)
         except Exception as e:
             return Response({"error": f"Failed to generate PDF: {str(e)}"}, status=500)
+
+
+class RE21CreateSignatureLinkEndpoint(APIView):
+    def post(self, request, *args, **kwargs):
+        form_data = request.data
+        template_path = os.path.join('static', 'pdfs', 're21_2026.pdf')
+
+        try:
+            # 1. Generate the raw PDF binary
+            pdf_service = PDFGenerationService(template_path)
+            pdf_bytes = pdf_service.generate_pdf(form_data)
+
+            # 2. Extract Client Info for DocuSign
+            signer_name = form_data.get("buyerName", "Test Buyer")
+            signer_email = form_data.get("buyerEmail", "test@example.com")
+
+            # 3. Send to DocuSign and retrieve the URL
+            ds_service = DocuSignService()
+            signing_url = ds_service.create_embedded_signature_link(
+                pdf_bytes=pdf_bytes,
+                signer_name=signer_name,
+                signer_email=signer_email
+            )
+
+            # 4. Return the URL to your iOS app
+            return Response({"signing_url": signing_url}, status=200)
+
+        except Exception as e:
+            return Response({"error": str(e)}, status=500)
