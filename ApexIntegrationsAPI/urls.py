@@ -17,6 +17,8 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path, include
 
+from AccountsAdmin.views import RE21PreviewEndpoint
+
 urlpatterns = [
     path('admin/', admin.site.urls),
 
@@ -25,4 +27,5 @@ urlpatterns = [
     # Note: Replace 'accounts.urls' if your app folder is named something else
     # (like 'AccountsAdmin.urls')
     path('api/auth/', include('AccountsAdmin.urls')),
+    path('api/contracts/preview-re21/', RE21PreviewEndpoint.as_view(), name='preview_re21'),
 ]

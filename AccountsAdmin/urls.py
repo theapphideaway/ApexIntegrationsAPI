@@ -1,5 +1,6 @@
 from django.urls import path
 from . import views
+from .views import RE21PreviewEndpoint
 
 urlpatterns = [
     path('organizations/', views.organization_list, name='organization-list'),

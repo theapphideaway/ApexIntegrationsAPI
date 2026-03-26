@@ -25,7 +25,11 @@ SECRET_KEY = 'django-insecure-8#136d=4u3(@lq2s)jmz*1o@$rfeb+k^d^4%2sde6_0bm$g&p)
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['www.apexintegrations.ai']
+ALLOWED_HOSTS = [
+    'www.apexintegrations.ai',
+    '127.0.0.1',
+    'localhost',
+]
 
 
 # Application definition

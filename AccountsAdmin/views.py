@@ -1,6 +1,11 @@
+import os
+
+from django.http import HttpResponse
 from django.shortcuts import render
 from django.utils import timezone
+from rest_framework.views import APIView
 
+from .pdf_service import PDFGenerationService
 # Create your views here.
 
 from rest_framework.decorators import api_view
@@ -215,3 +220,28 @@ def delete_user(request, user_id):
             {"error": "User not found."},
             status=status.HTTP_404_NOT_FOUND
         )
+
+
+class RE21PreviewEndpoint(APIView):
+    def post(self, request, *args, **kwargs):
+        # 1. Grab the JSON payload sent from iOS
+        form_data = request.data
+
+        # 2. Define where the blank template lives on your server
+        # Make sure you put re21_2026.pdf in your static or media folder
+        template_path = os.path.join('static', 'pdfs', 're21_2026.pdf')
+
+        try:
+            # 3. Initialize the service and generate the binary PDF data
+            pdf_service = PDFGenerationService(template_path)
+            pdf_bytes = pdf_service.generate_pdf(form_data)
+
+            # 4. Return the file directly to the iOS app
+            response = HttpResponse(pdf_bytes, content_type='application/pdf')
+            response['Content-Disposition'] = 'attachment; filename="RE21_Preview.pdf"'
+            return response
+
+        except FileNotFoundError as e:
+            return Response({"error": str(e)}, status=404)
+        except Exception as e:
+            return Response({"error": f"Failed to generate PDF: {str(e)}"}, status=500)

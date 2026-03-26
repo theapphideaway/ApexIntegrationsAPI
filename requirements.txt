@@ -1,3 +1,5 @@
 Django~=4.2.4
 djangorestframework~=3.14.0
 djangorestframework-simplejwt
+PyMuPDF
+num2words
