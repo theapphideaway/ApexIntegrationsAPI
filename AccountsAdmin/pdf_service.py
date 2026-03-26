@@ -1,3 +1,5 @@
+import re
+
 import fitz  # PyMuPDF
 import os
 from datetime import datetime
@@ -36,18 +38,22 @@ class PDFGenerationService:
                 # Handle Standard Text Fields
                 if field_name in field_map:
                     value_to_insert = str(field_map[field_name])
-
+                    print(f"DEBUG: Inserting '{value_to_insert}' into '{field_name}'")
                     # --- TARGETED OVERRIDE FOR DOCUSIGN TEXT TAGS (\s1\, etc.) ---
-                    if r"\s" in value_to_insert:
+                    if "\\s" in value_to_insert or "\\i" in value_to_insert:
                         rect = annot.rect
-                        widgets_to_delete.append(annot)  # Mark for safe deletion
+                        widgets_to_delete.append(annot)
 
-                        # Write raw text directly into the PDF's base ink layer
-                        page.insert_textbox(
-                            rect,
+                        # Log the coordinates so we can see if the box is 'empty'
+                        print(f"DEBUG: Printing {value_to_insert} at Rect: {rect}")
+
+                        # Use insert_text instead of insert_textbox to bypass 'fit' checks
+                        # we use rect.bl (bottom-left) and nudge it up 2 pixels so it doesn't hit the line
+                        page.insert_text(
+                            (rect.x0, rect.y1 - 2),
                             value_to_insert,
                             fontsize=10,
-                            color=(1, 1, 1)  
+                            color=(1, 1, 1)  # Keep black for this test
                         )
                         continue
 
@@ -506,12 +512,10 @@ class PDFGenerationService:
         buyer_names = [n.strip() for n in raw_buyer_name.split(" and ")]
 
         buyer1_name = buyer_names[0] if buyer_names else raw_buyer_name
-
         map["BUYER Print Name"] = buyer1_name
         map["Phone_3"] = data.get("buyerPhone", "")
         map["Cell"] = data.get("buyerPhone", "")
         map["EMail_3"] = data.get("buyerEmail", "")
-
         map["buyer_1_street_address"] = data.get("propertyAddress", "")
         map["buyer_1_city"] = data.get("propertyCity", "")
         map["State"] = data.get("propertyState", "")
@@ -519,6 +523,34 @@ class PDFGenerationService:
         map["Fax_3"] = ""
 
         map["DocuSignHere_1"] = "\\s1\\"
+
+        # Buyer 2 (Only triggers if "and" was found)
+        for name in buyer_names:
+            print(name)
+        raw_buyer_name = data.get("buyerName", "")
+
+        # Use a case-insensitive split to be safe
+        buyer_names = [n.strip() for n in re.split(r'\s+and\s+', raw_buyer_name, flags=re.IGNORECASE)]
+        initial_offsets = [1, 5, 9, 13, 17, 21, 25, 29, 33, 37]
+
+        # Map Buyer 1 Initials
+        for num in initial_offsets:
+            map[f"DocuSignSignHere_{num}"] = "\\i1\\"
+
+        # Map Buyer 2 Initials (Only if a second buyer exists)
+        if len(buyer_names) > 1:
+            for num in initial_offsets:
+                # Adding 1 to the offset to target the Buyer 2 fields
+                map[f"DocuSignSignHere_{num + 1}"] = "\\i2\\"
+        # Buyer 2 logic
+        if len(buyer_names) > 1:
+            map["BUYER Print Name_2"] = buyer_names[1]
+            map["DocuSignHere_2"] = "\\s2\\"
+            print(f"DEBUG: Mapping Buyer 2 ({buyer_names[1]}) to DocuSignHere_2")
+        else:
+            map["BUYER Print Name_2"] = ""
+            map["DocuSignHere_2"] = "\\s2\\"
+            print("DEBUG: Only one buyer detected.")
 
         return map
 

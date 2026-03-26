@@ -1,7 +1,7 @@
 import base64
 import os
 from docusign_esign import ApiClient, EnvelopesApi, EnvelopeDefinition, Document, Signer, SignHere, Tabs, Recipients, \
-    RecipientViewRequest
+    RecipientViewRequest, InitialHere
 
 
 class DocuSignService:
@@ -31,16 +31,14 @@ class DocuSignService:
         )
         return token_response.access_token
 
-    def create_embedded_signature_link(self, pdf_bytes: bytes, signer_name: str, signer_email: str) -> str:
-        """Sends the PDF to DocuSign and generates a unique, interactive signing URL."""
+    def create_embedded_signature_links(self, pdf_bytes: bytes, buyers: list) -> dict:
         access_token = self._get_access_token()
 
-        # Setup the authenticated API client
         api_client = ApiClient()
         api_client.host = self.base_path
         api_client.set_default_header("Authorization", f"Bearer {access_token}")
 
-        # 1. Package the PDF Document
+        # 1. Package the PDF
         b64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
         document = Document(
             document_base64=b64_pdf,
@@ -49,32 +47,49 @@ class DocuSignService:
             document_id="1"
         )
 
-        # 2. Configure the Signer and the AutoPlace Anchor Tag
-        # client_user_id is REQUIRED. It tells DocuSign this user signs via your embedded app.
-        signer = Signer(
-            email=signer_email,
-            name=signer_name,
-            recipient_id="1",
-            routing_order="1",
-            client_user_id="1001"
-        )
+        # 2. Build the Signers
+        docusign_signers = []
+        for index, buyer in enumerate(buyers):
+            signer_id = str(index + 1)
+            client_user_id = f"100{signer_id}"
 
-        # Instruct DocuSign to drop the interactive signature box exactly on top of \s1\
-        sign_here = SignHere(
-            anchor_string="\\s1\\",
-            anchor_units="pixels",
-            anchor_y_offset="0",
-            anchor_x_offset="0"
-        )
+            signer = Signer(
+                email=buyer['email'],
+                name=buyer['name'],
+                recipient_id=signer_id,
+                routing_order="1",  # Both can sign at the same time
+                client_user_id=client_user_id
+            )
 
-        signer.tabs = Tabs(sign_here_tabs=[sign_here])
+            sign_here = SignHere(
+                anchor_string=f"\\s{signer_id}\\",
+                anchor_units="pixels",
+                anchor_y_offset="0",
+                anchor_x_offset="0"
+            )
 
-        # 3. Build and Send the Envelope
+            # Define the Initials Tab (Added this)
+            # This will find ALL instances of \i1\ on the document
+            initial_here = InitialHere(
+                anchor_string=f"\\i{signer_id}\\",
+                anchor_units="pixels",
+                anchor_y_offset="0",
+                anchor_x_offset="0"
+            )
+
+            # Add both to the signer's tabs
+            signer.tabs = Tabs(
+                sign_here_tabs=[sign_here],
+                initial_here_tabs=[initial_here]  # Add the initials list here
+            )
+            docusign_signers.append(signer)
+
+        # 3. Create the Envelope
         envelope_definition = EnvelopeDefinition(
             email_subject="Please sign your RE-21 Purchase Agreement",
             documents=[document],
-            recipients=Recipients(signers=[signer]),
-            status="sent"  # "sent" makes it actionable immediately
+            recipients=Recipients(signers=docusign_signers),
+            status="sent"
         )
 
         envelopes_api = EnvelopesApi(api_client)
@@ -83,20 +98,34 @@ class DocuSignService:
             envelope_definition=envelope_definition
         )
 
-        # 4. Request the Embedded Signing View URL
-        view_request = RecipientViewRequest(
-            authentication_method="none",
-            client_user_id="1001",
-            recipient_id="1",
-            return_url="https://www.apexintegrations.ai/success",  # DocuSign redirects here when finished
-            user_name=signer_name,
-            email=signer_email
-        )
+        # 4. Generate individual URLs for each buyer
+        urls = {
+            "buyer1_signing_url": "",
+            "buyer2_signing_url": ""
+        }
 
-        results = envelopes_api.create_recipient_view(
-            account_id=self.account_id,
-            envelope_id=envelope_summary.envelope_id,
-            recipient_view_request=view_request
-        )
+        for index, buyer in enumerate(buyers):
+            signer_id = str(index + 1)
+            client_user_id = f"100{signer_id}"
 
-        return results.url
+            view_request = RecipientViewRequest(
+                authentication_method="none",
+                client_user_id=client_user_id,
+                recipient_id=signer_id,
+                return_url="https://www.apexintegrations.ai/success",
+                user_name=buyer['name'],
+                email=buyer['email']
+            )
+
+            results = envelopes_api.create_recipient_view(
+                account_id=self.account_id,
+                envelope_id=envelope_summary.envelope_id,
+                recipient_view_request=view_request
+            )
+
+            # Map the URL to the correct key in our dictionary
+            key = f"buyer{signer_id}_signing_url"
+            urls[key] = results.url
+
+        return urls
+
