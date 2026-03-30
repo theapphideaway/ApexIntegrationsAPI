@@ -234,8 +234,7 @@ class RE21PreviewEndpoint(APIView):
 
         # 2. Define where the blank template lives on your server
         # Make sure you put re21_2026.pdf in your static or media folder
-        template_path = os.path.join('static', 'pdfs', 're21_2026.pdf')
-
+        template_path = os.path.join(settings.BASE_DIR, 'static', 'pdfs', 're21_2026.pdf')
         try:
             # 3. Initialize the service and generate the binary PDF data
             pdf_service = PDFGenerationService(template_path)
@@ -255,8 +254,7 @@ class RE21PreviewEndpoint(APIView):
 class RE21CreateSignatureLinkEndpoint(APIView):
     def post(self, request, *args, **kwargs):
         form_data = request.data
-        template_path = os.path.join('static', 'pdfs', 're21_2026.pdf')
-
+        template_path = os.path.join(settings.BASE_DIR, 'static', 'pdfs', 're21_2026.pdf')
         try:
             pdf_service = PDFGenerationService(template_path)
             pdf_bytes = pdf_service.generate_pdf(form_data)
