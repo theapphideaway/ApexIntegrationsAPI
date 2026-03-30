@@ -3,6 +3,8 @@ import os
 from docusign_esign import ApiClient, EnvelopesApi, EnvelopeDefinition, Document, Signer, SignHere, Tabs, Recipients, \
     RecipientViewRequest, InitialHere
 
+from ApexIntegrationsAPI import settings
+
 
 class DocuSignService:
     def __init__(self):
@@ -17,8 +19,10 @@ class DocuSignService:
         """Authenticates with DocuSign via JWT and returns a temporary access token."""
         api_client = ApiClient()
         api_client.set_base_path(self.auth_server)
+        private_key_path = os.path.join(settings.BASE_DIR, 'private_key.pem')
 
-        with open(self.private_key_path, "rb") as key_file:
+        # 2. Open the file using that absolute path
+        with open(private_key_path, "rb") as key_file:
             private_key_bytes = key_file.read()
 
         token_response = api_client.request_jwt_user_token(
