@@ -133,6 +133,76 @@ class DocuSignService:
 
         return urls
 
+    def send_envelope(self, pdf_bytes: bytes, buyers: list) -> dict:
+        access_token = self._get_access_token()
+
+        api_client = ApiClient()
+        api_client.host = self.base_path
+        api_client.set_default_header("Authorization", f"Bearer {access_token}")
+
+        # 1. Package the PDF
+        b64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
+        document = Document(
+            document_base64=b64_pdf,
+            name="RE-21 Purchase Agreement",
+            file_extension="pdf",
+            document_id="1"
+        )
+
+        # 2. Build the Signers
+        docusign_signers = []
+        for index, buyer in enumerate(buyers):
+            signer_id = str(index + 1)
+
+            # CRITICAL FIX: We completely removed client_user_id here.
+            # This triggers DocuSign to send the email directly to the buyer.
+            signer = Signer(
+                email=buyer['email'],
+                name=buyer['name'],
+                recipient_id=signer_id,
+                routing_order="1"  # Both get the email at the same time
+            )
+
+            sign_here = SignHere(
+                anchor_string=f"\\s{signer_id}\\",
+                anchor_units="pixels",
+                anchor_y_offset="0",
+                anchor_x_offset="0"
+            )
+
+            initial_here = InitialHere(
+                anchor_string=f"\\i{signer_id}\\",
+                anchor_units="pixels",
+                anchor_y_offset="0",
+                anchor_x_offset="0"
+            )
+
+            signer.tabs = Tabs(
+                sign_here_tabs=[sign_here],
+                initial_here_tabs=[initial_here]
+            )
+            docusign_signers.append(signer)
+
+        # 3. Create and Send the Envelope
+        envelope_definition = EnvelopeDefinition(
+            email_subject="Please sign your RE-21 Purchase Agreement",
+            documents=[document],
+            recipients=Recipients(signers=docusign_signers),
+            status="sent"  # "sent" immediately fires off the emails
+        )
+
+        envelopes_api = EnvelopesApi(api_client)
+        envelope_summary = envelopes_api.create_envelope(
+            account_id=self.account_id,
+            envelope_definition=envelope_definition
+        )
+
+        # 4. Return the success status and envelope ID to Swift
+        return {
+            "status": "sent",
+            "envelope_id": envelope_summary.envelope_id
+        }
+
     def download_envelope_document(self, envelope_id: str) -> bytes:
         """Retrieves the fully signed PDF from DocuSign using the envelope ID."""
         access_token = self._get_access_token()

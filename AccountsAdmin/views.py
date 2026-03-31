@@ -255,6 +255,7 @@ class RE21CreateSignatureLinkEndpoint(APIView):
     def post(self, request, *args, **kwargs):
         form_data = request.data
         template_path = os.path.join(settings.BASE_DIR, 'static', 'pdfs', 're21_2026.pdf')
+
         try:
             pdf_service = PDFGenerationService(template_path)
             pdf_bytes = pdf_service.generate_pdf(form_data)
@@ -262,23 +263,25 @@ class RE21CreateSignatureLinkEndpoint(APIView):
             # Split the names
             raw_buyer_name = form_data.get("buyerName", "Test Buyer")
             buyer_names = [n.strip() for n in raw_buyer_name.split(" and ")]
-            signer_email = form_data.get("buyerEmail", "test@example.com")
+
+            # Email parsing
+            primary_email = form_data.get("buyerEmail", "test@example.com")
 
             buyers_list = []
             for name in buyer_names:
-                buyers_list.append({"name": name, "email": signer_email})
+                # Currently assigning the same email to both buyers.
+                # DocuSign will send two separate signing emails to this address.
+                buyers_list.append({"name": name, "email": primary_email})
 
-            # Get the dictionary of URLs
+            # Send the document
             ds_service = DocuSignService()
-            # Note: Renamed function call to plural 'links'
-            signing_urls = ds_service.create_embedded_signature_links(
+            result = ds_service.send_envelope(
                 pdf_bytes=pdf_bytes,
                 buyers=buyers_list
             )
 
-            # This will return { "buyer1_signing_url": "...", "buyer2_signing_url": "..." }
-            # If there's no Buyer 2, the buyer2_signing_url will be an empty string
-            return Response(signing_urls, status=200)
+            # Returns { "status": "sent", "envelope_id": "..." }
+            return Response(result, status=200)
 
         except Exception as e:
             return Response({"error": str(e)}, status=500)
