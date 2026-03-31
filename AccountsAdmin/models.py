@@ -1,6 +1,7 @@
 import uuid
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin, BaseUserManager
+from django.conf import settings
 from django.utils import timezone
 import random
 from datetime import timedelta
@@ -122,3 +123,33 @@ class OTPCode(models.Model):
 
     def __str__(self):
         return f"{self.user.email} - {self.code}"
+
+
+class Deal(models.Model):
+    # Core Info
+    agent = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='deals')
+    property_address = models.CharField(max_length=255)
+    buyer_names = models.CharField(max_length=255)
+
+    # State Management
+    STATUS_CHOICES = [
+        ('draft', 'Draft'),
+        ('out_for_signature', 'Waiting on buyers signatures'),
+        ('signed_by_buyers', 'Offer ready to send'),
+        ('executed', 'Fully Executed'),
+        ('cancelled', 'Cancelled')
+    ]
+    status = models.CharField(max_length=50, choices=STATUS_CHOICES, default='draft')
+
+    # DocuSign Tracking
+    docusign_envelope_id = models.CharField(max_length=100, blank=True, null=True)
+
+    # S3 File URLs (We store both to maintain the history)
+    draft_pdf_url = models.URLField(max_length=500, blank=True, null=True)
+    signed_pdf_url = models.URLField(max_length=500, blank=True, null=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.property_address} - {self.buyer_names}"

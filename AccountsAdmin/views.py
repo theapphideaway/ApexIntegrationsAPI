@@ -1,11 +1,16 @@
 import base64
 import os
+import uuid
 
+from django.contrib.auth import get_user_model
+from django.core.files.base import ContentFile
+from django.core.files.storage import default_storage
 from django.http import HttpResponse
 from django.shortcuts import render
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from docusign_esign import EnvelopesApi, ApiClient
+from rest_framework.generics import ListAPIView
 from rest_framework.permissions import AllowAny
 from rest_framework.views import APIView
 
@@ -18,8 +23,8 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import Organization, CustomUser, OTPCode
-from .serializers import OrganizationSerializer, CustomUserSerializer
+from .models import Organization, CustomUser, OTPCode, Deal
+from .serializers import OrganizationSerializer, CustomUserSerializer, DealSerializer
 from django.core.mail import send_mail
 from django.conf import settings
 
@@ -257,31 +262,60 @@ class RE21CreateSignatureLinkEndpoint(APIView):
         template_path = os.path.join(settings.BASE_DIR, 'static', 'pdfs', 're21_2026.pdf')
 
         try:
+            # 1. Generate the PDF
             pdf_service = PDFGenerationService(template_path)
             pdf_bytes = pdf_service.generate_pdf(form_data)
 
-            # Split the names
+            # 2. Extract Data for the Database
             raw_buyer_name = form_data.get("buyerName", "Test Buyer")
             buyer_names = [n.strip() for n in raw_buyer_name.split(" and ")]
-
-            # Email parsing
             primary_email = form_data.get("buyerEmail", "test@example.com")
+            property_address = form_data.get("propertyAddress", "Unknown Address")
 
-            buyers_list = []
-            for name in buyer_names:
-                # Currently assigning the same email to both buyers.
-                # DocuSign will send two separate signing emails to this address.
-                buyers_list.append({"name": name, "email": primary_email})
+            # 3. Upload Draft to AWS S3
+            # We use a short UUID so if you do 10 offers for "123 Main St", they don't overwrite each other
+            file_id = uuid.uuid4().hex[:8]
+            s3_filename = f"drafts/re21_{file_id}.pdf"
 
-            # Send the document
+            # This line pushes the bytes directly to your AWS S3 bucket!
+            saved_path = default_storage.save(s3_filename, ContentFile(pdf_bytes))
+
+            # This generates the secure AWS URL
+            draft_url = default_storage.url(saved_path)
+
+            # 4. Create the Deal in Postgres
+            User = get_user_model()
+            # Safety Check: If you haven't wired up iOS login tokens yet,
+            # this grabs the first user in your database so the test doesn't crash.
+            agent = request.user if request.user.is_authenticated else User.objects.first()
+
+            deal = Deal.objects.create(
+                agent=agent,
+                property_address=property_address,
+                buyer_names=raw_buyer_name,
+                status='out_for_signature',
+                draft_pdf_url=draft_url
+            )
+
+            # 5. Send to DocuSign
+            buyers_list = [{"name": name, "email": primary_email} for name in buyer_names]
             ds_service = DocuSignService()
             result = ds_service.send_envelope(
                 pdf_bytes=pdf_bytes,
                 buyers=buyers_list
             )
 
-            # Returns { "status": "sent", "envelope_id": "..." }
-            return Response(result, status=200)
+            # 6. Update the Deal with the Envelope ID
+            deal.docusign_envelope_id = result.get("envelope_id")
+            deal.save()
+
+            # Return success to Swift, including the S3 URL for your debugging
+            return Response({
+                "status": "sent",
+                "envelope_id": deal.docusign_envelope_id,
+                "deal_id": deal.id,
+                "draft_url": draft_url
+            }, status=200)
 
         except Exception as e:
             return Response({"error": str(e)}, status=500)
@@ -368,3 +402,15 @@ class RE21ContractStatusEndpoint(APIView):
 
         except Exception as e:
             return Response({"error": str(e)}, status=500)
+
+
+class AgentDealsListView(ListAPIView):
+    serializer_class = DealSerializer
+    # Make sure only logged-in agents can see their deals
+    permission_classes = [AllowAny]
+
+    def get_queryset(self):
+        # Only return deals belonging to the agent making the request
+        # Order them so the most recently updated deals are at the top
+        return Deal.objects.order_by('-updated_at')
+

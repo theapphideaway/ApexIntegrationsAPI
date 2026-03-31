@@ -5,3 +5,4 @@ PyMuPDF
 num2words
 docusign-esign
 python-dotenv
+boto3 django-storages

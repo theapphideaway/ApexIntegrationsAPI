@@ -155,3 +155,29 @@ EMAIL_USE_SSL = False
 EMAIL_HOST_USER = 'ianschoenrock@gmail.com' # Your Gmail address
 EMAIL_HOST_PASSWORD = 'nlltzwmbfwwewsxi' # The code from Google
 DEFAULT_FROM_EMAIL = 'Real Estate App <your-email@gmail.com>'
+
+import os
+
+# AWS S3 Configuration
+AWS_ACCESS_KEY_ID = os.environ.get('AWS_ACCESS_KEY_ID')
+AWS_SECRET_ACCESS_KEY = os.environ.get('AWS_SECRET_ACCESS_KEY')
+AWS_STORAGE_BUCKET_NAME = os.environ.get('AWS_STORAGE_BUCKET_NAME')
+AWS_S3_REGION_NAME = os.environ.get('AWS_S3_REGION_NAME', 'us-west-2')
+
+# Security: Don't allow files to be overwritten if they have the same name
+AWS_S3_FILE_OVERWRITE = False
+
+# Security: This tells Django to generate Pre-Signed URLs that expire
+# rather than making the S3 URLs public permanently.
+AWS_QUERYSTRING_AUTH = True
+AWS_QUERYSTRING_EXPIRE = 300 # Links expire in 5 minutes (300 seconds)
+
+# Tell Django to use S3 for media files (user uploads/generated PDFs)
+STORAGES = {
+    "default": {
+        "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
+    },
+    "staticfiles": {
+        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+    },
+}

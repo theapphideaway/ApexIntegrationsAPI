@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Organization, CustomUser
+from .models import Organization, CustomUser, Deal
 
 
 class OrganizationSerializer(serializers.ModelSerializer):
@@ -16,3 +16,21 @@ class CustomUserSerializer(serializers.ModelSerializer):
         model = CustomUser
         fields = ['id', 'email', 'first_name', 'last_name', 'phone_number', 'role', 'organization']
 
+
+class DealSerializer(serializers.ModelSerializer):
+    # We add a custom field to format the status text exactly how Swift expects it
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+
+    class Meta:
+        model = Deal
+        fields = [
+            'id',
+            'property_address',
+            'buyer_names',
+            'status',
+            'status_display',
+            'docusign_envelope_id',
+            'draft_pdf_url',
+            'signed_pdf_url',
+            'updated_at'
+        ]
