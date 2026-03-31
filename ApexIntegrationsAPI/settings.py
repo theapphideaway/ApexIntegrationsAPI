@@ -156,16 +156,20 @@ EMAIL_HOST_USER = 'ianschoenrock@gmail.com' # Your Gmail address
 EMAIL_HOST_PASSWORD = 'nlltzwmbfwwewsxi' # The code from Google
 DEFAULT_FROM_EMAIL = 'Real Estate App <your-email@gmail.com>'
 
-import os
-
 # AWS S3 Configuration
 AWS_ACCESS_KEY_ID = os.environ.get('AWS_ACCESS_KEY_ID')
 AWS_SECRET_ACCESS_KEY = os.environ.get('AWS_SECRET_ACCESS_KEY')
 AWS_STORAGE_BUCKET_NAME = os.environ.get('AWS_STORAGE_BUCKET_NAME')
-AWS_S3_REGION_NAME = os.environ.get('AWS_S3_REGION_NAME', 'us-west-2')
+AWS_S3_REGION_NAME = os.environ.get('AWS_S3_REGION_NAME', 'us-east-2')
+
+# AWS_ACCESS_KEY_ID = "AKIA3WKTSYZQKNO2IKL4"
+# AWS_SECRET_ACCESS_KEY = "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"
+# AWS_STORAGE_BUCKET_NAME = "apex-integrations-production-803871049312-us-east-2-an"
+# AWS_S3_REGION_NAME = "us-east-2"
 
 # Security: Don't allow files to be overwritten if they have the same name
 AWS_S3_FILE_OVERWRITE = False
+AWS_DEFAULT_ACL = None
 
 # Security: This tells Django to generate Pre-Signed URLs that expire
 # rather than making the S3 URLs public permanently.

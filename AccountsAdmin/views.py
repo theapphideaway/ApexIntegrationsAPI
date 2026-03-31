@@ -276,7 +276,8 @@ class RE21CreateSignatureLinkEndpoint(APIView):
             # We use a short UUID so if you do 10 offers for "123 Main St", they don't overwrite each other
             file_id = uuid.uuid4().hex[:8]
             s3_filename = f"drafts/re21_{file_id}.pdf"
-
+            print("DEBUG BUCKET:", settings.AWS_STORAGE_BUCKET_NAME)
+            print("DEBUG KEY:", settings.AWS_ACCESS_KEY_ID)
             # This line pushes the bytes directly to your AWS S3 bucket!
             saved_path = default_storage.save(s3_filename, ContentFile(pdf_bytes))
 
