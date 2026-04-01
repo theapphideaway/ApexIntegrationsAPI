@@ -162,11 +162,6 @@ AWS_SECRET_ACCESS_KEY = os.environ.get('AWS_SECRET_ACCESS_KEY')
 AWS_STORAGE_BUCKET_NAME = os.environ.get('AWS_STORAGE_BUCKET_NAME')
 AWS_S3_REGION_NAME = os.environ.get('AWS_S3_REGION_NAME', 'us-east-2')
 
-# AWS_ACCESS_KEY_ID = "AKIA3WKTSYZQKNO2IKL4"
-# AWS_SECRET_ACCESS_KEY = "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"
-# AWS_STORAGE_BUCKET_NAME = "apex-integrations-production-803871049312-us-east-2-an"
-# AWS_S3_REGION_NAME = "us-east-2"
-
 # Security: Don't allow files to be overwritten if they have the same name
 AWS_S3_FILE_OVERWRITE = False
 AWS_DEFAULT_ACL = None

@@ -18,7 +18,7 @@ from django.contrib import admin
 from django.urls import path, include
 
 from AccountsAdmin.views import RE21PreviewEndpoint, RE21CreateSignatureLinkEndpoint, docusign_webhook, \
-    RE21ContractStatusEndpoint
+    RE21ContractStatusEndpoint, AgentDealsListView
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -32,4 +32,5 @@ urlpatterns = [
     path('api/contracts/create-signing-link/', RE21CreateSignatureLinkEndpoint.as_view(), name='create_signing_link'),
     path('api/contracts/webhook/', docusign_webhook, name='docusign_webhook'),
     path('api/contracts/status/<str:envelope_id>/', RE21ContractStatusEndpoint.as_view(), name='contract_status'),
+    path('api/deals/', AgentDealsListView.as_view(), name='agent_deals'),
 ]
