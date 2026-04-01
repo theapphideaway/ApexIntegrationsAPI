@@ -5,6 +5,7 @@ import uuid
 from django.contrib.auth import get_user_model
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
+from django.db.models import Q
 from django.http import HttpResponse
 from django.shortcuts import render
 from django.utils import timezone
@@ -30,6 +31,7 @@ from django.conf import settings
 
 
 @api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
 def organization_list(request):
     """
     List all organizations, or create a new organization.
@@ -444,13 +446,23 @@ class RE21ContractStatusEndpoint(APIView):
 
 class AgentDealsListView(ListAPIView):
     serializer_class = DealSerializer
-    # Make sure only logged-in agents can see their deals
-    permission_classes = [AllowAny]
+
+    # 1. 🔒 Lock the door: Only accept requests with a valid Bearer token
+    permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        # Only return deals belonging to the agent making the request
-        # Order them so the most recently updated deals are at the top
-        return Deal.objects.order_by('-updated_at')
+        user = self.request.user
+
+        # 2. 🛡️ Admin Catch-All
+        # If this is your admin account, return your deals PLUS any unassigned deals
+        if user.email.lower() == 'ianschoenrock@gmail.com':
+            return Deal.objects.filter(
+                Q(agent=user) | Q(agent__isnull=True)
+            ).order_by('-updated_at')
+
+        # 3. 👥 Normal Flow
+        # Standard agents only see deals explicitly assigned to them
+        return Deal.objects.filter(agent=user).order_by('-updated_at')
 
 
 class DealDeleteEndpoint(DestroyAPIView):
