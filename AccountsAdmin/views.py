@@ -73,6 +73,20 @@ def request_otp(request):
     if not email:
         return Response({"error": "Email is required"}, status=status.HTTP_400_BAD_REQUEST)
 
+    # ---------------------------------------------------------
+    # 0. THE DEV & APP STORE REVIEW BYPASS
+    # ---------------------------------------------------------
+    if email.lower() == 'ianschoenrock@gmail.com':
+        print("---> BYPASS TRIGGERED: Skipping email generation for admin test account.")
+        # Return a fake success message so the iOS app proceeds to the verification screen
+        return Response(
+            {"message": "Verification code has been sent to your email."},
+            status=status.HTTP_200_OK
+        )
+
+    # ---------------------------------------------------------
+    # 1. NORMAL OTP FLOW
+    # ---------------------------------------------------------
     try:
         user = CustomUser.objects.get(email__iexact=email)
         print(f"---> User found: {user.first_name}")  # DEBUG
@@ -95,7 +109,7 @@ def request_otp(request):
 
     except CustomUser.DoesNotExist:
         print("---> ERROR: User does not exist in the database!")  # DEBUG
-        # We still return 200 for security, but now you'll see why it didn't send.
+        # We still return 200 for security, so bad actors can't use this endpoint to fish for valid emails.
         pass
     except Exception as e:
         print(f"---> SMTP/SYSTEM ERROR: {e}")  # DEBUG
@@ -164,12 +178,40 @@ def verify_otp(request):
 
     print(f"---> Verification attempt: Email='{email}', Code='{code}'")
 
+    # ---------------------------------------------------------
+    # 0. THE DEV & APP STORE REVIEW BYPASS
+    # ---------------------------------------------------------
+    if email.lower() == 'ianschoenrock@gmail.com' and code == '000000':
+        print("---> BYPASS TRIGGERED for admin test account.")
+        try:
+            user = CustomUser.objects.get(email__iexact=email)
+
+            # Update last login just like the normal flow
+            user.last_login = timezone.now()
+            user.save(update_fields=['last_login'])
+
+            refresh = RefreshToken.for_user(user)
+            print("---> Success! Tokens generated via bypass.")
+
+            return Response({
+                'access': str(refresh.access_token),
+                'refresh': str(refresh),
+                'user_id': str(user.id)  # Cast to string to ensure Swift parses it cleanly
+            }, status=status.HTTP_200_OK)
+
+        except CustomUser.DoesNotExist:
+            print("---> ERROR: Admin bypass user not found in DB.")
+            return Response({"error": "Admin user not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    # ---------------------------------------------------------
+    # 1. NORMAL OTP FLOW
+    # ---------------------------------------------------------
     try:
-        # 1. Check User
+        # Check User
         user = CustomUser.objects.get(email__iexact=email)
         print(f"---> User found: {user.id}")
 
-        # 2. Check for the OTP
+        # Check for the OTP
         # We look for the most recent UNUSED code for this specific user
         otp_instance = OTPCode.objects.filter(
             user=user,
@@ -179,7 +221,7 @@ def verify_otp(request):
 
         print(f"---> OTP found in DB. Created at: {otp_instance.created_at}")
 
-        # 3. Check Validity
+        # Check Validity
         if otp_instance.is_valid():
             otp_instance.is_used = True
             otp_instance.save()
@@ -193,7 +235,7 @@ def verify_otp(request):
             return Response({
                 'access': str(refresh.access_token),
                 'refresh': str(refresh),
-                'user_id': user.id
+                'user_id': str(user.id)
             }, status=status.HTTP_200_OK)
 
         else:

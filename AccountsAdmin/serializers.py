@@ -25,10 +25,13 @@ class DealSerializer(serializers.ModelSerializer):
     draft_pdf_url = serializers.SerializerMethodField()
     signed_pdf_url = serializers.SerializerMethodField()
 
+    agent_id = serializers.SerializerMethodField()
+
     class Meta:
         model = Deal
         fields = [
             'id',
+            'agent_id',
             'property_address',
             'buyer_names',
             'status',
@@ -38,6 +41,15 @@ class DealSerializer(serializers.ModelSerializer):
             'signed_pdf_url',
             'updated_at'
         ]
+
+    def get_agent_id(self, obj):
+        # Assuming your Deal model has an 'agent' ForeignKey, Django automatically
+        # creates an 'agent_id' property. We check if it exists and is not None.
+        if hasattr(obj, 'agent_id') and obj.agent_id:
+            return str(obj.agent_id)
+
+        # Fallback to your Admin ID if no agent is assigned
+        return "60d8ba89-e169-4f97-86d8-9b45d317e149"
 
     def get_draft_pdf_url(self, obj):
         if not obj.draft_pdf_url:
