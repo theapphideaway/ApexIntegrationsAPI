@@ -10,8 +10,8 @@ from django.shortcuts import render
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from docusign_esign import EnvelopesApi, ApiClient
-from rest_framework.generics import ListAPIView
-from rest_framework.permissions import AllowAny
+from rest_framework.generics import ListAPIView, DestroyAPIView
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.views import APIView
 
 from .docusign_service import DocuSignService
@@ -276,18 +276,12 @@ class RE21CreateSignatureLinkEndpoint(APIView):
             # We use a short UUID so if you do 10 offers for "123 Main St", they don't overwrite each other
             file_id = uuid.uuid4().hex[:8]
             s3_filename = f"drafts/re21_{file_id}.pdf"
-            print("DEBUG BUCKET:", settings.AWS_STORAGE_BUCKET_NAME)
-            print("DEBUG KEY:", settings.AWS_ACCESS_KEY_ID)
-            # This line pushes the bytes directly to your AWS S3 bucket!
-            saved_path = default_storage.save(s3_filename, ContentFile(pdf_bytes))
 
-            # This generates the secure AWS URL
-            draft_url = default_storage.url(saved_path)
+            # This pushes the bytes to S3 and returns the clean path: "drafts/re21_1234.pdf"
+            saved_path = default_storage.save(s3_filename, ContentFile(pdf_bytes))
 
             # 4. Create the Deal in Postgres
             User = get_user_model()
-            # Safety Check: If you haven't wired up iOS login tokens yet,
-            # this grabs the first user in your database so the test doesn't crash.
             agent = request.user if request.user.is_authenticated else User.objects.first()
 
             deal = Deal.objects.create(
@@ -295,7 +289,8 @@ class RE21CreateSignatureLinkEndpoint(APIView):
                 property_address=property_address,
                 buyer_names=raw_buyer_name,
                 status='out_for_signature',
-                draft_pdf_url=draft_url
+                # CRITICAL CHANGE: Save the short path, not the expiring URL
+                draft_pdf_url=saved_path
             )
 
             # 5. Send to DocuSign
@@ -315,7 +310,7 @@ class RE21CreateSignatureLinkEndpoint(APIView):
                 "status": "sent",
                 "envelope_id": deal.docusign_envelope_id,
                 "deal_id": deal.id,
-                "draft_url": draft_url
+                "draft_url": saved_path
             }, status=200)
 
         except Exception as e:
@@ -414,4 +409,31 @@ class AgentDealsListView(ListAPIView):
         # Only return deals belonging to the agent making the request
         # Order them so the most recently updated deals are at the top
         return Deal.objects.order_by('-updated_at')
+
+
+class DealDeleteEndpoint(DestroyAPIView):
+    # Ensure only logged-in users can trigger a deletion
+
+    def get_queryset(self):
+        # SECURITY: This ensures an agent can only delete their OWN deals.
+        # If they guess the ID of another agent's deal, Django will return a 404.
+        return Deal.objects.filter(agent=self.request.user)
+
+    def perform_destroy(self, instance):
+        # 1. Delete the Draft PDF from AWS S3
+        if instance.draft_pdf_url:
+            try:
+                default_storage.delete(instance.draft_pdf_url)
+            except Exception as e:
+                print(f"Failed to delete draft from S3: {e}")
+
+        # 2. Delete the Signed PDF from AWS S3 (if it exists)
+        if instance.signed_pdf_url:
+            try:
+                default_storage.delete(instance.signed_pdf_url)
+            except Exception as e:
+                print(f"Failed to delete signed doc from S3: {e}")
+
+        # 3. Finally, delete the record from Postgres
+        instance.delete()
 
