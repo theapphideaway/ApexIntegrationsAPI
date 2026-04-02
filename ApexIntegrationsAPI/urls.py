@@ -35,4 +35,5 @@ urlpatterns = [
     path('api/contracts/status/<str:envelope_id>/', RE21ContractStatusEndpoint.as_view(), name='contract_status'),
     path('api/deals/', AgentDealsListView.as_view(), name='agent_deals'),
     path('api/deals/<int:pk>/', DealDeleteEndpoint.as_view(), name='delete_deal'),
+
 ]

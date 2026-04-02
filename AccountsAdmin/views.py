@@ -34,6 +34,17 @@ def landing_page(request):
     return render(request, 'landing_page.html')
 
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def current_user(request):
+    """
+    Returns the profile data for the currently authenticated user.
+    """
+    # request.user is securely guaranteed by the IsAuthenticated lock
+    serializer = CustomUserSerializer(request.user)
+    return Response(serializer.data, status=status.HTTP_200_OK)
+
+
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
 def organization_list(request):

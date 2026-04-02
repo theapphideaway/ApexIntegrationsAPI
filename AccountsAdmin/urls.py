@@ -9,4 +9,5 @@ urlpatterns = [
     path('add-user/', views.add_user, name='add-user'),
     path('verify-otp/', views.verify_otp, name='verify-otp'),
     path('delete-user/<uuid:user_id>/', views.delete_user, name='delete-user'),
+    path('users/me/', views.current_user, name='current_user'),
 ]
