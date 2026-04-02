@@ -30,6 +30,10 @@ from django.core.mail import send_mail
 from django.conf import settings
 
 
+def landing_page(request):
+    return render(request, 'landing_page.html')
+
+
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
 def organization_list(request):
