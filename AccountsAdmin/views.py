@@ -50,6 +50,7 @@ def organization_list(request):
 
 
 @api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
 def user_list(request):
     """
     List all users, or create a new user.
@@ -124,6 +125,7 @@ def request_otp(request):
 
 
 @api_view(['POST'])
+@permission_classes([IsAuthenticated])
 def add_user(request):
     """
     Endpoint for a Brokerage/Admin to add a new agent.
@@ -253,6 +255,7 @@ def verify_otp(request):
 
 
 @api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
 def delete_user(request, user_id):
     """
     Deletes a user from the system based on their UUID.
@@ -301,6 +304,8 @@ class RE21PreviewEndpoint(APIView):
 
 
 class RE21CreateSignatureLinkEndpoint(APIView):
+    permission_classes = [IsAuthenticated]
+
     def post(self, request, *args, **kwargs):
         form_data = request.data
         template_path = os.path.join(settings.BASE_DIR, 'static', 'pdfs', 're21_2026.pdf')
@@ -325,15 +330,11 @@ class RE21CreateSignatureLinkEndpoint(APIView):
             saved_path = default_storage.save(s3_filename, ContentFile(pdf_bytes))
 
             # 4. Create the Deal in Postgres
-            User = get_user_model()
-            agent = request.user if request.user.is_authenticated else User.objects.first()
-
             deal = Deal.objects.create(
-                agent=agent,
+                agent=request.user,
                 property_address=property_address,
                 buyer_names=raw_buyer_name,
                 status='out_for_signature',
-                # CRITICAL CHANGE: Save the short path, not the expiring URL
                 draft_pdf_url=saved_path
             )
 
@@ -397,6 +398,8 @@ def docusign_webhook(request):
 
 
 class RE21ContractStatusEndpoint(APIView):
+    permission_classes = [IsAuthenticated]
+
     def get(self, request, envelope_id, *args, **kwargs):
         """
         GET /api/contracts/status/<envelope_id>/
@@ -446,27 +449,34 @@ class RE21ContractStatusEndpoint(APIView):
 
 class AgentDealsListView(ListAPIView):
     serializer_class = DealSerializer
-
-    # 1. 🔒 Lock the door: Only accept requests with a valid Bearer token
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         user = self.request.user
 
-        # 2. 🛡️ Admin Catch-All
-        # If this is your admin account, return your deals PLUS any unassigned deals
+        # 👇 Add these debug prints
+        print(f"\n=== DEALS LIST DEBUG ===")
+        print(f"Request User Email: {user.email}")
+        print(f"Request User ID: {user.id}")
+
         if user.email.lower() == 'ianschoenrock@gmail.com':
-            return Deal.objects.filter(
+            deals = Deal.objects.filter(
                 Q(agent=user) | Q(agent__isnull=True)
             ).order_by('-updated_at')
 
-        # 3. 👥 Normal Flow
-        # Standard agents only see deals explicitly assigned to them
-        return Deal.objects.filter(agent=user).order_by('-updated_at')
+            print(f"Admin Route Triggered. Found {deals.count()} deals.")
+            print(f"========================\n")
+            return deals
+
+        deals = Deal.objects.filter(agent=user).order_by('-updated_at')
+        print(f"Normal Agent Route Triggered. Found {deals.count()} deals.")
+        print(f"========================\n")
+        return deals
 
 
 class DealDeleteEndpoint(DestroyAPIView):
     # Ensure only logged-in users can trigger a deletion
+    permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         # SECURITY: This ensures an agent can only delete their OWN deals.
