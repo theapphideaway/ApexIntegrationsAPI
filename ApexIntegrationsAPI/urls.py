@@ -16,6 +16,7 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
+from rest_framework_simplejwt.views import TokenRefreshView
 
 from AccountsAdmin.views import RE21PreviewEndpoint, RE21CreateSignatureLinkEndpoint, docusign_webhook, \
     RE21ContractStatusEndpoint, AgentDealsListView, DealDeleteEndpoint, landing_page
@@ -35,5 +36,5 @@ urlpatterns = [
     path('api/contracts/status/<str:envelope_id>/', RE21ContractStatusEndpoint.as_view(), name='contract_status'),
     path('api/deals/', AgentDealsListView.as_view(), name='agent_deals'),
     path('api/deals/<int:pk>/', DealDeleteEndpoint.as_view(), name='delete_deal'),
-
+    path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
 ]

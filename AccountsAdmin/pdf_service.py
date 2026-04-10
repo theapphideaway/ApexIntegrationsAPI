@@ -531,7 +531,7 @@ class PDFGenerationService:
 
         # Use a case-insensitive split to be safe
         buyer_names = [n.strip() for n in re.split(r'\s+and\s+', raw_buyer_name, flags=re.IGNORECASE)]
-        initial_offsets = [1, 5, 9, 13, 17, 21, 25, 29, 33, 37]
+        initial_offsets = [1, 5, 9, 13, 17, 21, 25, 29, 33]
 
         for num in initial_offsets:
             # Buyer 1 & 2 (Current Signers)
