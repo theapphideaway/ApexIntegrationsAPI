@@ -2,8 +2,9 @@ Django~=4.2.4
 djangorestframework~=3.14.0
 djangorestframework-simplejwt
 PyMuPDF
-num2words
+num2words~=0.5.14
 docusign-esign
-python-dotenv
+python-dotenv~=1.2.2
 boto3
 django-storages
+requests~=2.31.0

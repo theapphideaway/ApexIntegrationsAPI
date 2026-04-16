@@ -14,6 +14,8 @@ from docusign_esign import EnvelopesApi, ApiClient
 from rest_framework.generics import ListAPIView, DestroyAPIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.views import APIView
+import requests
+from django.shortcuts import redirect
 
 from .docusign_service import DocuSignService
 from .pdf_service import PDFGenerationService
@@ -515,4 +517,50 @@ class DealDeleteEndpoint(DestroyAPIView):
 
         # 3. Finally, delete the record from Postgres
         instance.delete()
+
+
+User = get_user_model()
+
+
+class FUBAuthCallbackView(APIView):
+    permission_classes = []  # Must be public so FUB can hit it
+
+    def get(self, request, *args, **kwargs):
+        # 1. Catch the data FUB sends us
+        code = request.GET.get('code')
+        state_user_id = request.GET.get('state')  # We will pass the Django User ID here from iOS
+
+        # If they denied access or something broke, redirect iOS back with an error
+        if not code or not state_user_id:
+            return redirect('apexapp://fub-callback?status=error&message=missing_params')
+
+        # 2. Trade the temporary code for the permanent access token
+        token_url = "https://api.followupboss.com/v1/oauth2/token"
+        payload = {
+            "grant_type": "authorization_code",
+            "code": code,
+            "client_id": settings.FUB_CLIENT_ID,
+            "client_secret": settings.FUB_CLIENT_SECRET,
+            "redirect_uri": "https://www.apexintegrations.ai/api/auth/fub/callback/"
+        }
+
+        response = requests.post(token_url, json=payload)
+
+        # 3. Handle the response and save it
+        if response.status_code == 200:
+            data = response.json()
+            access_token = data.get("access_token")
+
+            try:
+                # Find the agent using the ID we passed in the state param
+                user = User.objects.get(id=state_user_id)
+                user.fub_access_token = access_token
+                user.save()
+
+                # Redirect back to iOS to close the Safari window!
+                return redirect('apexapp://fub-callback?status=success')
+            except User.DoesNotExist:
+                return redirect('apexapp://fub-callback?status=error&message=user_not_found')
+        else:
+            return redirect('apexapp://fub-callback?status=error&message=fub_rejected')
 

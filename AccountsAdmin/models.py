@@ -88,6 +88,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     # Metadata
     date_joined = models.DateTimeField(default=timezone.now)
     last_login_ip = models.GenericIPAddressField(null=True, blank=True)  # Good for security audits
+    fub_access_token = models.CharField(max_length=255, blank=True, null=True)
 
     objects = CustomUserManager()
 
