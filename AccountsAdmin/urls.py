@@ -7,6 +7,7 @@ urlpatterns = [
     path('users/', views.user_list, name='user-list'),
     path('request-otp/', views.request_otp, name='request-otp'),
     path('add-user/', views.add_user, name='add-user'),
+    path('add-organization/', views.add_organization, name='add-organization'),
     path('verify-otp/', views.verify_otp, name='verify-otp'),
     path('delete-user/<uuid:user_id>/', views.delete_user, name='delete-user'),
     path('users/me/', views.current_user, name='current_user'),

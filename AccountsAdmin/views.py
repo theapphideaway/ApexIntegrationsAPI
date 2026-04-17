@@ -49,23 +49,15 @@ def current_user(request):
     return Response(serializer.data, status=status.HTTP_200_OK)
 
 
-@api_view(['GET', 'POST'])
+@api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def organization_list(request):
     """
-    List all organizations, or create a new organization.
+    List all organizations
     """
-    if request.method == 'GET':
-        organizations = Organization.objects.all()
-        serializer = OrganizationSerializer(organizations, many=True)
-        return Response(serializer.data)
-
-    elif request.method == 'POST':
-        serializer = OrganizationSerializer(data=request.data)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    organizations = Organization.objects.all()
+    serializer = OrganizationSerializer(organizations, many=True)
+    return Response(serializer.data)
 
 
 @api_view(['GET', 'POST'])
@@ -190,6 +182,28 @@ def add_user(request):
             # We still return 201 because the user was created successfully
 
         return Response(CustomUserSerializer(user).data, status=status.HTTP_201_CREATED)
+
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def add_organization(request):
+    """
+    Endpoint for a Super Admin to explicitly add a new Organization (Brokerage).
+    """
+    serializer = OrganizationSerializer(data=request.data)
+
+    if serializer.is_valid():
+        # 1. Save the new Organization to the database
+        organization = serializer.save()
+
+        # 2. (Optional Future Logic)
+        # You can add logic here to notify your team, trigger a webhook,
+        # or send a welcome email to the new Brokerage owner.
+        print(f"---> New Organization created: {organization.name} (Plan: {organization.plan_type})")
+
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
