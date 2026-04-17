@@ -31,6 +31,7 @@ from .models import Organization, CustomUser, OTPCode, Deal
 from .serializers import OrganizationSerializer, CustomUserSerializer, DealSerializer
 from django.core.mail import send_mail
 from django.conf import settings
+from django.http import HttpResponse
 
 
 def landing_page(request):
@@ -526,13 +527,19 @@ User = get_user_model()
 class FUBAuthCallbackView(APIView):
     permission_classes = []
 
+    # 👇 NEW: Helper function to safely redirect to iOS deep links
+    def custom_redirect(self, url):
+        response = HttpResponse(status=302)
+        response['Location'] = url
+        return response
+
     def get(self, request, *args, **kwargs):
         try:
             code = request.GET.get('code')
             state_user_id = request.GET.get('state')
 
             if not code or not state_user_id:
-                return redirect('apexapp://fub-callback?status=error&message=missing_params')
+                return self.custom_redirect('apexapp://fub-callback?status=error&message=missing_params')
 
             token_url = "https://app.followupboss.com/oauth/token"
             payload = {
@@ -551,21 +558,20 @@ class FUBAuthCallbackView(APIView):
                 data = response.json()
                 access_token = data.get("access_token")
 
-                # FIX: Use filter().first() instead of get() so it doesn't crash on bad UUIDs
                 user = User.objects.filter(id=state_user_id).first()
                 if user:
                     user.fub_access_token = access_token
                     user.save()
-                    return redirect('apexapp://fub-callback?status=success')
+                    return self.custom_redirect('apexapp://fub-callback?status=success')
                 else:
-                    return redirect('apexapp://fub-callback?status=error&message=user_not_found')
+                    return self.custom_redirect('apexapp://fub-callback?status=error&message=user_not_found')
             else:
                 # Catch exactly why FUB rejected the token exchange
                 error_msg = urllib.parse.quote(response.text)
-                return redirect(f'apexapp://fub-callback?status=error&message=fub_rejected&details={error_msg}')
+                return self.custom_redirect(
+                    f'apexapp://fub-callback?status=error&message=fub_rejected&details={error_msg}')
 
         except Exception as e:
-            # Catch ANY Python crash and send it back to iOS
             error_msg = urllib.parse.quote(str(e))
-            return redirect(f'apexapp://fub-callback?status=error&message=python_crash&details={error_msg}')
+            return self.custom_redirect(f'apexapp://fub-callback?status=error&message=python_crash&details={error_msg}')
 
