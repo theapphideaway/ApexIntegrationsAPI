@@ -597,34 +597,81 @@ class FUBAuthCallbackView(APIView):
 
 
 class FUBSendDocumentView(APIView):
-    # CRITICAL: This ensures only agents logged into your iOS app can use this endpoint
+    # Only logged-in agents using your iOS app can hit this
     permission_classes = [IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
         user = request.user
         fub_token = user.fub_access_token
 
-        # 1. Check if the agent actually connected FUB
         if not fub_token:
-            return Response({"error": "Follow Up Boss is not connected."}, status=400)
+            return Response({"error": "Follow Up Boss is not connected to this account."}, status=400)
 
-        # 2. Grab the payload iOS is sending us (the contact info, notes, S3 links)
-        payload = request.data
+        # 1. Grab the raw data from the iOS app
+        data = request.data
+        email = data.get('email', '')
+        name = data.get('name', 'Unknown Client')
+        phone = data.get('phone', '')
+        s3_url = data.get('s3Url')
+        filename = data.get('filename')
 
-        # 3. We are sending a Note/Event to FUB (Update this URL if you are creating a contact instead!)
-        fub_url = "https://api.followupboss.com/v1/events"
-
-        # 4. THE MAGIC: Use "Bearer" with the OAuth token!
+        # The FUB Bearer Token Header!
         headers = {
             "Authorization": f"Bearer {fub_token}",
             "Content-Type": "application/json",
+            "Accept": "application/json",
             "X-System": "Docu-Flow-AI"
         }
 
-        # 5. Push to Follow Up Boss on behalf of the agent
-        response = requests.post(fub_url, json=payload, headers=headers)
+        person_id = None
 
-        if response.status_code in [200, 201]:
-            return Response({"status": "success", "fub_response": response.json()})
+        # STEP 1: Find Person by Email
+        if email:
+            search_url = f"https://api.followupboss.com/v1/people?email={urllib.parse.quote(email)}"
+            search_res = requests.get(search_url, headers=headers)
+            if search_res.status_code == 200:
+                people = search_res.json().get('people', [])
+                if people:
+                    person_id = people[0]['id']
+
+        # STEP 2: Create Person (if not found)
+        if not person_id:
+            create_url = "https://api.followupboss.com/v1/people"
+            name_parts = name.split(" ", 1)
+            first_name = name_parts[0]
+            last_name = name_parts[1] if len(name_parts) > 1 else ""
+
+            payload = {
+                "firstName": first_name,
+                "source": "Apex Integrations AI"
+            }
+            if last_name: payload["lastName"] = last_name
+            if email: payload["emails"] = [{"value": email}]
+            if phone: payload["phones"] = [{"value": phone}]
+
+            create_res = requests.post(create_url, json=payload, headers=headers)
+            if create_res.status_code in [200, 201]:
+                person_id = create_res.json().get('id')
+            else:
+                return Response({"error": "Failed to create FUB contact", "details": create_res.text}, status=400)
+
+        # STEP 3: Add the Document Note
+        note_url = "https://api.followupboss.com/v1/notes"
+        note_body = f"""
+        <p><strong>Apex Integrations AI</strong> generated a new RE-21 offer.</p>
+        <p>📄 <a href="{s3_url}" target="_blank">Click here to view {filename}</a></p>
+        """
+
+        note_payload = {
+            "personId": person_id,
+            "subject": "RE-21 Document Generated",
+            "body": note_body,
+            "isHtml": True
+        }
+
+        note_res = requests.post(note_url, json=note_payload, headers=headers)
+
+        if note_res.status_code in [200, 201]:
+            return Response({"status": "success", "personId": person_id})
         else:
-            return Response({"status": "error", "fub_error": response.text}, status=response.status_code)
+            return Response({"error": "Failed to add note to FUB", "details": note_res.text}, status=400)
