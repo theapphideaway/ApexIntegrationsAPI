@@ -544,20 +544,17 @@ class FUBAuthCallbackView(APIView):
             # 1. We MUST use the APP domain for OAuth token exchange
             token_url = "https://app.followupboss.com/oauth/token"
 
-            # 2. Do NOT put the client_id/secret in the body
+            # 2. Put ALL FIVE required parameters directly into the payload
             payload = {
                 "grant_type": "authorization_code",
                 "code": code,
+                "client_id": settings.FUB_CLIENT_ID,
+                "client_secret": settings.FUB_CLIENT_SECRET,
                 "redirect_uri": "https://www.apexintegrations.ai/api/auth/fub/callback/"
             }
 
-            # 3. Pass payload as URL-encoded form data (data=)
-            # and ID/Secret as Basic Auth headers
-            response = requests.post(
-                token_url,
-                data=payload,
-                auth=(settings.FUB_CLIENT_ID, settings.FUB_CLIENT_SECRET)
-            )
+            # 3. Send it as form data (data=). NO Basic Auth header needed!
+            response = requests.post(token_url, data=payload)
 
             if response.status_code == 200:
                 data = response.json()
