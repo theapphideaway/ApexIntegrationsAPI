@@ -560,12 +560,33 @@ class FUBAuthCallbackView(APIView):
             # 3. STRIP the keys! Invisible spaces/newlines from terminal copy-pastes
             # will corrupt the Basic Auth header and drop the payload.
 
-            # 4. Fire the request! requests natively handles the Base64 Basic Auth encoding.
+            print("=== FUB TOKEN REQUEST DEBUG ===")
+            print("URL:", token_url)
+            print("Payload:", payload)
+            print("Client ID repr:", repr(client_id))
+            print("Client Secret repr:", repr(client_secret[:5] + "..."))  # Only show first 5 chars
+
+            # Manually show what the Basic Auth header looks like
+            raw = f"{client_id}:{client_secret}"
+            encoded = base64.b64encode(raw.encode()).decode()
+            print("Basic Auth header:", f"Basic {encoded[:20]}...")
+            print("================================")
+
             response = requests.post(
                 token_url,
                 data=payload,
                 auth=(client_id, client_secret)
             )
+
+            print("=== FUB TOKEN RESPONSE DEBUG ===")
+            print("Status:", response.status_code)
+            print("Response body:", response.text)
+            print("Request headers sent:", dict(response.request.headers))
+            print("Request body sent:", response.request.body)
+            print("================================")
+
+            # 4. Fire the request! requests natively handles the Base64 Basic Auth encoding.
+           
 
             if response.status_code == 200:
                 data = response.json()
