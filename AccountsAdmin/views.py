@@ -527,66 +527,53 @@ User = get_user_model()
 class FUBAuthCallbackView(APIView):
     permission_classes = []
 
-    # 👇 NEW: Helper function to safely redirect to iOS deep links
     def custom_redirect(self, url):
         response = HttpResponse(status=302)
         response['Location'] = url
         return response
 
     def get(self, request, *args, **kwargs):
+        # Generate a unique ID to prove if Safari is double-hitting the endpoint
+        import uuid
+        req_id = str(uuid.uuid4())[:6]
+        print(f"\n=== [DJANGO OAUTH {req_id}] CALLBACK HIT ===")
+
         try:
             code = request.GET.get('code')
             state_user_id = request.GET.get('state')
+            print(f"Code received: {bool(code)}")
 
             if not code or not state_user_id:
                 return self.custom_redirect('apexapp://fub-callback?status=error&message=missing_params')
 
-            # 1. The official FUB API OAuth Token endpoint
             token_url = "https://app.followupboss.com/oauth/token"
 
-            # 2. STRICTLY only the exact parameters FUB asks for.
-            # We are removing client_id from this dictionary!
-
-            client_id = settings.FUB_CLIENT_ID.strip()
-            client_secret = settings.FUB_CLIENT_SECRET.strip()
+            # 👇 THE GOLDILOCKS PAYLOAD
+            # FUB needs client_id in the body, but explicitly rejects the request
+            # if client_secret is in the body while Basic Auth is active.
             payload = {
                 "grant_type": "authorization_code",
                 "code": code.strip(),
-                "redirect_uri": "https://www.apexintegrations.ai/api/auth/fub/callback/"
+                "redirect_uri": "https://www.apexintegrations.ai/api/auth/fub/callback/",
+                "client_id": settings.FUB_CLIENT_ID.strip()
             }
 
-            # 3. STRIP the keys! Invisible spaces/newlines from terminal copy-pastes
-            # will corrupt the Basic Auth header and drop the payload.
+            client_id = settings.FUB_CLIENT_ID.strip()
+            client_secret = settings.FUB_CLIENT_SECRET.strip()
 
-            print("=== FUB TOKEN REQUEST DEBUG ===")
-            print("URL:", token_url)
-            print("Payload:", payload)
-            print("Client ID repr:", repr(client_id))
-            print("Client Secret repr:", repr(client_secret[:5] + "..."))  # Only show first 5 chars
+            print("Sending POST request to FUB...")
 
-            # Manually show what the Basic Auth header looks like
-            raw = f"{client_id}:{client_secret}"
-            encoded = base64.b64encode(raw.encode()).decode()
-            print("Basic Auth header:", f"Basic {encoded[:20]}...")
-            print("================================")
-
+            # The requests library handles building the Base64 Auth header automatically
             response = requests.post(
-                "https://app.followupboss.com/oauth/token",
+                token_url,
                 data=payload,
                 auth=(client_id, client_secret)
             )
 
-            print("=== FUB TOKEN RESPONSE DEBUG ===")
-            print("Status:", response.status_code)
-            print("Response body:", response.text)
-            print("Request headers sent:", dict(response.request.headers))
-            print("Request body sent:", response.request.body)
-            print("================================")
-
-            # 4. Fire the request! requests natively handles the Base64 Basic Auth encoding.
-
+            print(f"FUB Status Code: {response.status_code}")
 
             if response.status_code == 200:
+                print("✅ Token Exchange Successful!")
                 data = response.json()
                 access_token = data.get("access_token")
 
@@ -598,12 +585,15 @@ class FUBAuthCallbackView(APIView):
                 else:
                     return self.custom_redirect('apexapp://fub-callback?status=error&message=user_not_found')
             else:
-                # Catch exactly why FUB rejected the token exchange
+                print(f"❌ FUB Rejected: {response.text}")
                 error_msg = urllib.parse.quote(response.text)
                 return self.custom_redirect(
                     f'apexapp://fub-callback?status=error&message=fub_rejected&details={error_msg}')
 
         except Exception as e:
+            print(f"🚨 Python Crash: {str(e)}")
             error_msg = urllib.parse.quote(str(e))
             return self.custom_redirect(f'apexapp://fub-callback?status=error&message=python_crash&details={error_msg}')
+        finally:
+            print(f"=== [DJANGO OAUTH {req_id}] END ===\n")
 
