@@ -1,5 +1,6 @@
 import base64
 import os
+import urllib
 import uuid
 
 from django.contrib.auth import get_user_model
@@ -523,49 +524,48 @@ User = get_user_model()
 
 
 class FUBAuthCallbackView(APIView):
-    permission_classes = []  # Must be public so FUB can hit it
+    permission_classes = []
 
     def get(self, request, *args, **kwargs):
-        # 1. Catch the data FUB sends us
-        code = request.GET.get('code')
-        state_user_id = request.GET.get('state')  # We will pass the Django User ID here from iOS
+        try:
+            code = request.GET.get('code')
+            state_user_id = request.GET.get('state')
 
-        # If they denied access or something broke, redirect iOS back with an error
-        if not code or not state_user_id:
-            return redirect('apexapp://fub-callback?status=error&message=missing_params')
+            if not code or not state_user_id:
+                return redirect('apexapp://fub-callback?status=error&message=missing_params')
 
-        # 2. Trade the temporary code for the permanent access token
-        token_url = "https://app.followupboss.com/oauth/token"
+            token_url = "https://app.followupboss.com/oauth/token"
+            payload = {
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": "https://www.apexintegrations.ai/api/auth/fub/callback/"
+            }
 
-        # 👇 FIX: Removed client_id and secret from the body
-        payload = {
-            "grant_type": "authorization_code",
-            "code": code,
-            "redirect_uri": "https://www.apexintegrations.ai/api/auth/fub/callback/"
-        }
+            response = requests.post(
+                token_url,
+                data=payload,
+                auth=(settings.FUB_CLIENT_ID, settings.FUB_CLIENT_SECRET)
+            )
 
-        # 👇 FIX: Send as form data (using 'data=') and use Basic Auth!
-        response = requests.post(
-            token_url,
-            data=payload,
-            auth=(settings.FUB_CLIENT_ID, settings.FUB_CLIENT_SECRET)
-        )
+            if response.status_code == 200:
+                data = response.json()
+                access_token = data.get("access_token")
 
-        # 3. Handle the response and save it
-        if response.status_code == 200:
-            data = response.json()
-            access_token = data.get("access_token")
+                # FIX: Use filter().first() instead of get() so it doesn't crash on bad UUIDs
+                user = User.objects.filter(id=state_user_id).first()
+                if user:
+                    user.fub_access_token = access_token
+                    user.save()
+                    return redirect('apexapp://fub-callback?status=success')
+                else:
+                    return redirect('apexapp://fub-callback?status=error&message=user_not_found')
+            else:
+                # Catch exactly why FUB rejected the token exchange
+                error_msg = urllib.parse.quote(response.text)
+                return redirect(f'apexapp://fub-callback?status=error&message=fub_rejected&details={error_msg}')
 
-            try:
-                # Find the agent using the ID we passed in the state param
-                user = User.objects.get(id=state_user_id)
-                user.fub_access_token = access_token
-                user.save()
-
-                # Redirect back to iOS to close the Safari window!
-                return redirect('apexapp://fub-callback?status=success')
-            except User.DoesNotExist:
-                return redirect('apexapp://fub-callback?status=error&message=user_not_found')
-        else:
-            return redirect('apexapp://fub-callback?status=error&message=fub_rejected')
+        except Exception as e:
+            # Catch ANY Python crash and send it back to iOS
+            error_msg = urllib.parse.quote(str(e))
+            return redirect(f'apexapp://fub-callback?status=error&message=python_crash&details={error_msg}')
 
