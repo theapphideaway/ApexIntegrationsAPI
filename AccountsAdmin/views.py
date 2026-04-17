@@ -542,19 +542,27 @@ class FUBAuthCallbackView(APIView):
                 return self.custom_redirect('apexapp://fub-callback?status=error&message=missing_params')
 
             # 1. We MUST use the APP domain for OAuth token exchange
-            token_url = "https://app.followupboss.com/oauth/token"
+            # 1. The official FUB API OAuth Token endpoint
+            token_url = "https://api.followupboss.com/v1/oauth2/token"
 
-            # 2. Put ALL FIVE required parameters directly into the payload
+            # 2. Build the Base64 Basic Auth header manually to guarantee it's perfect
+            auth_string = f"{settings.FUB_CLIENT_ID}:{settings.FUB_CLIENT_SECRET}"
+            b64_auth = base64.b64encode(auth_string.encode('utf-8')).decode('utf-8')
+
+            headers = {
+                "Authorization": f"Basic {b64_auth}",
+                "Content-Type": "application/x-www-form-urlencoded"
+            }
+
+            # 3. Only the required OAuth params go in the body
             payload = {
                 "grant_type": "authorization_code",
                 "code": code,
-                "client_id": settings.FUB_CLIENT_ID,
-                "client_secret": settings.FUB_CLIENT_SECRET,
                 "redirect_uri": "https://www.apexintegrations.ai/api/auth/fub/callback/"
             }
 
-            # 3. Send it as form data (data=). NO Basic Auth header needed!
-            response = requests.post(token_url, data=payload)
+            # 4. Fire the request with explicit headers and form data (data=)
+            response = requests.post(token_url, headers=headers, data=payload)
 
             if response.status_code == 200:
                 data = response.json()
