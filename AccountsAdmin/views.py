@@ -544,26 +544,25 @@ class FUBAuthCallbackView(APIView):
             # 1. The official FUB API OAuth Token endpoint
             token_url = "https://app.followupboss.com/oauth/token"
 
-            # 2. Build the exact Base64 Basic Auth header FUB demands
-            auth_string = f"{settings.FUB_CLIENT_ID}:{settings.FUB_CLIENT_SECRET}"
-            b64_auth = base64.b64encode(auth_string.encode('utf-8')).decode('utf-8')
-
-            headers = {
-                "Authorization": f"Basic {b64_auth}",
-                "Content-Type": "application/x-www-form-urlencoded",
-                "Accept": "application/json"
-            }
-
-            # 3. FUB expects the client_id to be in the body AND in the auth header
+            # 2. STRICTLY only the exact parameters FUB asks for.
+            # We are removing client_id from this dictionary!
             payload = {
                 "grant_type": "authorization_code",
-                "code": code,
-                "client_id": settings.FUB_CLIENT_ID,
+                "code": code.strip(),
                 "redirect_uri": "https://www.apexintegrations.ai/api/auth/fub/callback/"
             }
 
-            # 4. Fire the request with explicit headers and form data (data=)
-            response = requests.post(token_url, headers=headers, data=payload)
+            # 3. STRIP the keys! Invisible spaces/newlines from terminal copy-pastes
+            # will corrupt the Basic Auth header and drop the payload.
+            client_id = settings.FUB_CLIENT_ID.strip()
+            client_secret = settings.FUB_CLIENT_SECRET.strip()
+
+            # 4. Fire the request! requests natively handles the Base64 Basic Auth encoding.
+            response = requests.post(
+                token_url,
+                data=payload,
+                auth=(client_id, client_secret)
+            )
 
             if response.status_code == 200:
                 data = response.json()
