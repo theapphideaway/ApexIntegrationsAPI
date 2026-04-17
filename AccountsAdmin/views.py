@@ -546,16 +546,19 @@ class FUBAuthCallbackView(APIView):
 
             # 2. STRICTLY only the exact parameters FUB asks for.
             # We are removing client_id from this dictionary!
+
+            client_id = settings.FUB_CLIENT_ID.strip()
+            client_secret = settings.FUB_CLIENT_SECRET.strip()
             payload = {
                 "grant_type": "authorization_code",
                 "code": code.strip(),
-                "redirect_uri": "https://www.apexintegrations.ai/api/auth/fub/callback/"
+                "redirect_uri": "https://www.apexintegrations.ai/api/auth/fub/callback/",
+                "client_id": client_id,  # ← Add this
+                "client_secret": client_secret  # ← And this (some providers want it here too)
             }
 
             # 3. STRIP the keys! Invisible spaces/newlines from terminal copy-pastes
             # will corrupt the Basic Auth header and drop the payload.
-            client_id = settings.FUB_CLIENT_ID.strip()
-            client_secret = settings.FUB_CLIENT_SECRET.strip()
 
             # 4. Fire the request! requests natively handles the Base64 Basic Auth encoding.
             response = requests.post(
