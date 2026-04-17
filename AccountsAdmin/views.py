@@ -594,3 +594,37 @@ class FUBAuthCallbackView(APIView):
             return self.custom_redirect(f'apexapp://fub-callback?status=error&message=python_crash&details={error_msg}')
         finally:
             print(f"=== [DJANGO OAUTH {req_id}] END ===\n")
+
+
+class FUBSendDocumentView(APIView):
+    # CRITICAL: This ensures only agents logged into your iOS app can use this endpoint
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        user = request.user
+        fub_token = user.fub_access_token
+
+        # 1. Check if the agent actually connected FUB
+        if not fub_token:
+            return Response({"error": "Follow Up Boss is not connected."}, status=400)
+
+        # 2. Grab the payload iOS is sending us (the contact info, notes, S3 links)
+        payload = request.data
+
+        # 3. We are sending a Note/Event to FUB (Update this URL if you are creating a contact instead!)
+        fub_url = "https://api.followupboss.com/v1/events"
+
+        # 4. THE MAGIC: Use "Bearer" with the OAuth token!
+        headers = {
+            "Authorization": f"Bearer {fub_token}",
+            "Content-Type": "application/json",
+            "X-System": "Docu-Flow-AI"
+        }
+
+        # 5. Push to Follow Up Boss on behalf of the agent
+        response = requests.post(fub_url, json=payload, headers=headers)
+
+        if response.status_code in [200, 201]:
+            return Response({"status": "success", "fub_response": response.json()})
+        else:
+            return Response({"status": "error", "fub_error": response.text}, status=response.status_code)

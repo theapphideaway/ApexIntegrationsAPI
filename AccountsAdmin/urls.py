@@ -1,6 +1,6 @@
 from django.urls import path
 from . import views
-from .views import RE21PreviewEndpoint, FUBAuthCallbackView
+from .views import RE21PreviewEndpoint, FUBAuthCallbackView, FUBSendDocumentView
 
 urlpatterns = [
     path('organizations/', views.organization_list, name='organization-list'),
@@ -11,4 +11,5 @@ urlpatterns = [
     path('delete-user/<uuid:user_id>/', views.delete_user, name='delete-user'),
     path('users/me/', views.current_user, name='current_user'),
     path('fub/callback/', FUBAuthCallbackView.as_view(), name='fub_auth_callback'),
+    path('fub/send/', FUBSendDocumentView.as_view(), name='fub_send_document'),
 ]
