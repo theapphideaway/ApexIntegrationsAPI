@@ -552,9 +552,7 @@ class FUBAuthCallbackView(APIView):
             payload = {
                 "grant_type": "authorization_code",
                 "code": code.strip(),
-                "redirect_uri": "https://www.apexintegrations.ai/api/auth/fub/callback/",
-                "client_id": client_id,  # ← Add this
-                "client_secret": client_secret  # ← And this (some providers want it here too)
+                "redirect_uri": "https://www.apexintegrations.ai/api/auth/fub/callback/"
             }
 
             # 3. STRIP the keys! Invisible spaces/newlines from terminal copy-pastes
@@ -573,7 +571,7 @@ class FUBAuthCallbackView(APIView):
             print("================================")
 
             response = requests.post(
-                token_url,
+                "https://app.followupboss.com/oauth/token",
                 data=payload,
                 auth=(client_id, client_secret)
             )
@@ -586,7 +584,7 @@ class FUBAuthCallbackView(APIView):
             print("================================")
 
             # 4. Fire the request! requests natively handles the Base64 Basic Auth encoding.
-           
+
 
             if response.status_code == 200:
                 data = response.json()
