@@ -541,19 +541,23 @@ class FUBAuthCallbackView(APIView):
             if not code or not state_user_id:
                 return self.custom_redirect('apexapp://fub-callback?status=error&message=missing_params')
 
-            token_url = "https://api.followupboss.com/v1/oauth2/token"
+            # 1. We MUST use the APP domain for OAuth token exchange
+            token_url = "https://app.followupboss.com/oauth/token"
 
-            # 2. Put the ID and Secret directly into the payload
+            # 2. Do NOT put the client_id/secret in the body
             payload = {
                 "grant_type": "authorization_code",
                 "code": code,
-                "client_id": settings.FUB_CLIENT_ID,
-                "client_secret": settings.FUB_CLIENT_SECRET,
                 "redirect_uri": "https://www.apexintegrations.ai/api/auth/fub/callback/"
             }
 
-            # 3. Send it as raw JSON, no Basic Auth required
-            response = requests.post(token_url, json=payload)
+            # 3. Pass payload as URL-encoded form data (data=)
+            # and ID/Secret as Basic Auth headers
+            response = requests.post(
+                token_url,
+                data=payload,
+                auth=(settings.FUB_CLIENT_ID, settings.FUB_CLIENT_SECRET)
+            )
 
             if response.status_code == 200:
                 data = response.json()
