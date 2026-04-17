@@ -533,7 +533,6 @@ class FUBAuthCallbackView(APIView):
         return response
 
     def get(self, request, *args, **kwargs):
-        # Generate a unique ID to prove if Safari is double-hitting the endpoint
         import uuid
         req_id = str(uuid.uuid4())[:6]
         print(f"\n=== [DJANGO OAUTH {req_id}] CALLBACK HIT ===")
@@ -541,21 +540,20 @@ class FUBAuthCallbackView(APIView):
         try:
             code = request.GET.get('code')
             state_user_id = request.GET.get('state')
-            print(f"Code received: {bool(code)}")
 
             if not code or not state_user_id:
                 return self.custom_redirect('apexapp://fub-callback?status=error&message=missing_params')
 
             token_url = "https://app.followupboss.com/oauth/token"
 
-            # 👇 THE GOLDILOCKS PAYLOAD
-            # FUB needs client_id in the body, but explicitly rejects the request
-            # if client_secret is in the body while Basic Auth is active.
+            # 👇 THE MISSING PARAMETER REVEALED
+            # Follow Up Boss uniquely requires the 'state' parameter to be
+            # echoed BACK in the POST payload. Almost no other API does this!
             payload = {
                 "grant_type": "authorization_code",
                 "code": code.strip(),
                 "redirect_uri": "https://www.apexintegrations.ai/api/auth/fub/callback/",
-                "client_id": settings.FUB_CLIENT_ID.strip()
+                "state": state_user_id.strip()  # <--- THIS IS THE FIX!
             }
 
             client_id = settings.FUB_CLIENT_ID.strip()
@@ -563,7 +561,7 @@ class FUBAuthCallbackView(APIView):
 
             print("Sending POST request to FUB...")
 
-            # The requests library handles building the Base64 Auth header automatically
+            # The requests library natively handles the Base64 Auth header
             response = requests.post(
                 token_url,
                 data=payload,
@@ -596,4 +594,3 @@ class FUBAuthCallbackView(APIView):
             return self.custom_redirect(f'apexapp://fub-callback?status=error&message=python_crash&details={error_msg}')
         finally:
             print(f"=== [DJANGO OAUTH {req_id}] END ===\n")
-
