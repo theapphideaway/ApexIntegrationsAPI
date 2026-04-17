@@ -535,16 +535,21 @@ class FUBAuthCallbackView(APIView):
             return redirect('apexapp://fub-callback?status=error&message=missing_params')
 
         # 2. Trade the temporary code for the permanent access token
-        token_url = "https://api.followupboss.com/v1/oauth2/token"
+        token_url = "https://app.followupboss.com/oauth/token"
+
+        # 👇 FIX: Removed client_id and secret from the body
         payload = {
             "grant_type": "authorization_code",
             "code": code,
-            "client_id": settings.FUB_CLIENT_ID,
-            "client_secret": settings.FUB_CLIENT_SECRET,
             "redirect_uri": "https://www.apexintegrations.ai/api/auth/fub/callback/"
         }
 
-        response = requests.post(token_url, json=payload)
+        # 👇 FIX: Send as form data (using 'data=') and use Basic Auth!
+        response = requests.post(
+            token_url,
+            data=payload,
+            auth=(settings.FUB_CLIENT_ID, settings.FUB_CLIENT_SECRET)
+        )
 
         # 3. Handle the response and save it
         if response.status_code == 200:
