@@ -109,16 +109,18 @@ class PDFGenerationService:
 
         # --- CLIENT & PROPERTY ---
         buyer_name = data.get("buyerName", "")
+        buyer_name_two = data.get("buyerNameTwo", "")
         seller_name = data.get("sellerName", "")
+        seller_name_two = data.get("sellerNameTwo", "")
 
         map["1 BUYER"] = buyer_name
         map["BUYER Print Name"] = buyer_name
-        map["BUYER Print Name_2"] = buyer_name
+        map["BUYER Print Name_2"] = buyer_name_two
         map["SELLER Print Name"] = seller_name
-        map["SELLER Print Name_2"] = seller_name
+        map["SELLER Print Name_2"] = seller_name_two
 
-        map["Phone_3"] = data.get("buyerPhone", "")
-        map["EMail_3"] = data.get("buyerEmail", "")
+        # map["Phone_3"] = data.get("buyerPhone", "")
+        # map["EMail_3"] = data.get("buyerEmail", "")
 
         address = data.get("propertyAddress", "")
         city = data.get("propertyCity", "")
@@ -162,7 +164,7 @@ class PDFGenerationService:
                 map["of the purchase price OR"] = format_currency(concessions_val)
 
         # --- LENDER REQUIRED REPAIRS ---
-        map["SELLER agrees to pay up to"] = format_currency(500)  # Default for testing
+        #map["SELLER agrees to pay up to"] = format_currency(500)  # Default for testing
 
         # --- EARNEST MONEY DELIVERY & DEPOSIT ---
         em_delivered = data.get("earnestMoneyDelivered")
@@ -210,7 +212,11 @@ class PDFGenerationService:
 
         financing_type = data.get("financingType")
         if financing_type != "cash":
-            map["shall_apply_checkbox"] = "X"
+            loan_app_status = data.get("loanApplicationStatus", "has_applied")  # Fallback to has_applied if missing
+            if loan_app_status == "has_applied":
+                map["has_applied_checkbox"] = "X"
+            elif loan_app_status == "shall_apply":
+                map["shall_apply_checkbox"] = "X"
             map["LOAN APPLICATION BUYER has applied OR shall apply for such loans Within"] = "10"
             map["with interest not to exceed"] = "6.1%"
 
@@ -234,7 +240,7 @@ class PDFGenerationService:
         map["term escrow holder shall be"] = "N/A"
 
         # --- SECTION 42 POSSESSION ---
-        is_testing_possession = True
+        is_testing_possession = False
         if is_testing_possession:
             map["key_upon_date"] = "X"
             map["42 POSSESSION BUYER shall be entitled to possession and keys upon closing or date"] = today_str
@@ -253,6 +259,11 @@ class PDFGenerationService:
 
             clean_time = upper_time.replace("PM", "").replace("AM", "").strip()
             map["at Local Time in which PROPERTY is located"] = clean_time
+
+        exp_date = data.get("offerExpirationDate")
+        if exp_date:
+            # Note: Replace "Offer_Expiration_Date" with the exact field name from Acrobat!
+            map["Date_16"] = format_date(exp_date)
 
         # --- SECTION 43 PRORATIONS ---
         proration_type = data.get("prorationType")
@@ -508,50 +519,38 @@ class PDFGenerationService:
         map["Excluded_Terms"] = excluded
 
         # Buyer 1 Mapping Specifics
-        raw_buyer_name = data.get("buyerName", "")
-        buyer_names = [n.strip() for n in raw_buyer_name.split(" and ")]
+        buyer_name = data.get("buyerName", "").strip()
+        buyer_name_two = data.get("buyerNameTwo", "").strip()
+        has_second_buyer = bool(buyer_name_two)
 
-        buyer1_name = buyer_names[0] if buyer_names else raw_buyer_name
-        map["BUYER Print Name"] = buyer1_name
-        map["Phone_3"] = data.get("buyerPhone", "")
-        map["Cell"] = data.get("buyerPhone", "")
-        map["EMail_3"] = data.get("buyerEmail", "")
-        map["buyer_1_street_address"] = data.get("propertyAddress", "")
-        map["buyer_1_city"] = data.get("propertyCity", "")
-        map["State"] = data.get("propertyState", "")
-        map["Zip"] = data.get("propertyZip", "")
-        map["Fax_3"] = ""
-
+        # Buyer 1 Mapping
+        map["BUYER Print Name"] = buyer_name
         map["DocuSignHere_1"] = "\\s1\\"
 
-        # Buyer 2 (Only triggers if "and" was found)
-        for name in buyer_names:
-            print(name)
-        raw_buyer_name = data.get("buyerName", "")
-
-        # Use a case-insensitive split to be safe
-        buyer_names = [n.strip() for n in re.split(r'\s+and\s+', raw_buyer_name, flags=re.IGNORECASE)]
+        # DocuSign Initial Tags (Offsets)
         initial_offsets = [1, 5, 9, 13, 17, 21, 25, 29, 33]
 
         for num in initial_offsets:
-            # Buyer 1 & 2 (Current Signers)
+            # Buyer 1 Initial
             map[f"DocuSignSignHere_{num}"] = "\\i1\\"
-            if len(buyer_names) > 1:
+
+            # Buyer 2 Initial (Only tag if they exist)
+            if has_second_buyer:
                 map[f"DocuSignSignHere_{num + 1}"] = "\\i2\\"
 
-            # Seller 1 & 2 (Pre-Tagging for the next agent)
+            # Seller 1 & 2 Initials (Pre-Tagging for the listing agent)
             map[f"DocuSignSignHere_{num + 2}"] = "\\i3\\"
             map[f"DocuSignSignHere_{num + 3}"] = "\\i4\\"
-        # Buyer 2 logic
-        if len(buyer_names) > 1:
-            map["BUYER Print Name_2"] = buyer_names[1]
+
+        # Buyer 2 Mapping Specifics
+        if has_second_buyer:
+            map["BUYER Print Name_2"] = buyer_name_two
             map["DocuSignHere_2"] = "\\s2\\"
-            print(f"DEBUG: Mapping Buyer 2 ({buyer_names[1]}) to DocuSignHere_2")
+            print(f"DEBUG: Mapping Buyer 2 ({buyer_name_two}) to DocuSignHere_2")
         else:
             map["BUYER Print Name_2"] = ""
             map["DocuSignHere_2"] = "\\s2\\"
             print("DEBUG: Only one buyer detected.")
-
         # Seller Signatures (Note: check your Acrobat case-sensitivity for 'DocuSign' vs 'Docusign')
         map["DocuSignHere3"] = "\\s3\\"
         map["DocuSignHere4"] = "\\s4\\"
