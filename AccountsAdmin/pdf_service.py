@@ -218,7 +218,11 @@ class PDFGenerationService:
             elif loan_app_status == "shall_apply":
                 map["shall_apply_checkbox"] = "X"
             map["LOAN APPLICATION BUYER has applied OR shall apply for such loans Within"] = "10"
-            map["with interest not to exceed"] = "6.1%"
+            rate = data.get("loanInterestRate", "")
+            if rate:
+                map["with interest not to exceed"] = f"{rate}%"
+            else:
+                map["with interest not to exceed"] = ""
 
         # --- TIMELINES & AGENCIES ---
         if data.get("closingDate"):
