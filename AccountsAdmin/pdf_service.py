@@ -492,10 +492,10 @@ class PDFGenerationService:
         # --- THE COST GRID (Page 6) ---
         def set_grid(payer, suffix):
             prefix_map = {
-                "buyer": "BUYER ",
-                "seller": "SELLER ",
-                "shared": "Shared Equally ",
-                "na": "NA "
+                "buyer": "BUYER",
+                "seller": "SELLER",
+                "shared": "Shared Equally",
+                "na": "NA"
             }
             prefix = prefix_map.get(payer, "NA ")
             map[prefix + suffix] = "X"
@@ -519,6 +519,12 @@ class PDFGenerationService:
         set_grid(data.get("septicPumpingPayer", "na"), "Septic Pumping Shall be ordered by BUYER SELLER")
         set_grid(data.get("surveyPayer", "na"), "Survey Shall be ordered by BUYER SELLER")
         set_grid("na", "Water RightsShares Transfer Fee")
+
+        set_grid("na", "Attorney Contract Preparation or Review FeeRow1")
+        set_grid("na", "Attorney Contract Preparation or Review FeeRow2")
+        set_grid("na", "Attorney Contract Preparation or Review FeeRow3")
+        set_grid("na", "Water RightsShares Transfer FeeRow1")
+        set_grid("na", "Water RightsShares Transfer FeeRow2")
 
         # --- MULTI-LINE TEXT BOXES ---
         contingencies = data.get("contingencies", [])
