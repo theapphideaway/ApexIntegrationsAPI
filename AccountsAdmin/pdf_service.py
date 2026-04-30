@@ -233,6 +233,25 @@ class PDFGenerationService:
             map["B TITLE COMPANY The parties agree that"] = data.get("titleCompany")
             map["Company located at"] = data.get("titleCompany")
 
+        # --- SECTION 11: TITLE INSURANCE TIMELINES ---
+        furnisher = data.get("titleCommitmentFurnishedBy")
+        if furnisher == "seller":
+            map["Title_seller_checkbox"] = "X"
+        elif furnisher == "buyer":
+            map["Title_buyer_checkbox"] = "X"
+
+        if data.get("titleCommitmentDays") is not None:
+            map["title_within_days"] = str(data.get("titleCommitmentDays"))
+
+        if data.get("titleObjectionDays") is not None:
+            map["buyer_within_days_title_after_receipt"] = str(data.get("titleObjectionDays"))
+
+        if data.get("titleSellerCureDays") is not None:
+            map["seller_within_days_title"] = str(data.get("titleSellerCureDays"))
+
+        if data.get("titleSellerTerminateDays") is not None:
+            map["seller_termination_within_days"] = str(data.get("titleSellerTerminateDays"))
+
         # --- SECTION 40 CLOSING ---
         if data.get("closingAgency"):
             map["COMPANY for this transaction shall be"] = data.get("closingAgency")
