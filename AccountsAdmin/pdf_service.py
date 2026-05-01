@@ -104,6 +104,10 @@ class PDFGenerationService:
         map["SELLING BROKERAGE"] = "Keller Williams Realty"
         map["Selling Agent"] = "Ian Schoenrock"
 
+        responsible_broker = data.get("responsibleBroker")
+        if responsible_broker:
+            map["Responsible_Broker"] = responsible_broker
+
         # --- DATES ---
         today_str = datetime.now().strftime("%m/%d/%Y")
 
@@ -212,7 +216,7 @@ class PDFGenerationService:
 
         financing_type = data.get("financingType")
         if financing_type != "cash":
-            loan_app_status = data.get("loanApplicationStatus", "has_applied")  # Fallback to has_applied if missing
+            loan_app_status = data.get("loanApplicationStatus", "has_applied")
             if loan_app_status == "has_applied":
                 map["has_applied_checkbox"] = "X"
             elif loan_app_status == "shall_apply":
