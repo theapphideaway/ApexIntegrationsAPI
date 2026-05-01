@@ -205,6 +205,15 @@ class PDFGenerationService:
         if data.get("secondLoanAmount") is not None:
             map["SECOND LOAN of"] = format_currency(data.get("secondLoanAmount"))
 
+        offer_price = float(data.get("offerPrice", 0)) if data.get("offerPrice") else 0
+        earnest_money = float(data.get("earnestMoney", 0)) if data.get("earnestMoney") else 0
+
+        funds_due = offer_price - earnest_money - total_proceeds
+
+        if funds_due > 0:
+            # Note: You may need to verify in Acrobat if this field is named "D" or something wild like "Approximate_Funds_Due"
+            map["D"] = format_currency(funds_due)
+
         if data.get("loanTermYears") is not None:
             map["for a period of"] = str(data.get("loanTermYears"))
 
@@ -237,9 +246,18 @@ class PDFGenerationService:
                 "Inspection Except for additional items or conditions specifically reserved in a Secondary Inspection below BUYER shall within"] = str(
                 data.get("inspectionPeriod"))
 
+        if data.get("inspectionSellerResponseDays") is not None:
+            map["applicable Upon receipt of written notice SELLER shall have"] = str(
+                data.get("inspectionSellerResponseDays"))
+
+        if data.get("inspectionBuyerNegotiationDays") is not None:
+            map[
+                "4 If SELLER does not agree to correct BUYERS disapproved itemsconditions within the strict time period specified then within"] = str(
+                data.get("inspectionBuyerNegotiationDays"))
+
         if data.get("titleCompany"):
             map["B TITLE COMPANY The parties agree that"] = data.get("titleCompany")
-            map["Company located at"] = data.get("titleCompany")
+            map["Company located at"] = data.get("titleCompanyLocation", "")
 
         # --- SECTION 11: TITLE INSURANCE TIMELINES ---
         furnisher = data.get("titleCommitmentFurnishedBy")
@@ -445,7 +463,12 @@ class PDFGenerationService:
         if data.get("hoaDues") is not None:
             map["Homeowners Association Documents Yes No NA Association dues are"] = format_currency(
                 data.get("hoaDues"))
-            map["per"] = "month"
+
+            freq = data.get("hoaDuesFrequency", "monthly")
+            if freq == "annually":
+                map["per"] = "year"
+            else:
+                map["per"] = "month"
 
         if data.get("hoaSetupFee") is not None:
             map["BUYER SELLER Shared Equally NA to pay Association SET UP FEE of"] = format_currency(
