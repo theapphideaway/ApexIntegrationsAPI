@@ -517,7 +517,13 @@ class PDFGenerationService:
             "the PROPERTY NOT AS A CONTINGENCY OF THE SALE but for the following stated purposes first walkthrough shall be within"] = "3"
         map[
             "BUYER that any repairs agreed to in writing by BUYER and SELLER have been completed The second walkthrough shall be within"] = "3"
-        map["is_not_target_housing_checkbox"] = "X"
+        is_built_before_1979 = data.get("isBuiltBefore1979", False)
+
+        if is_built_before_1979:
+            # Note: Double check Acrobat to make sure this is the exact name of the "Yes" box!
+            map["is_target_housing_checkbox"] = "X"
+        else:
+            map["is_not_target_housing_checkbox"] = "X"
         map["buyer_does_not_wave"] = "X"
 
         # --- THE COST GRID (Page 6) ---
