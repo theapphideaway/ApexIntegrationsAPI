@@ -372,18 +372,18 @@ class PDFGenerationService:
         # Inspections (Secondary Specific Boxes)
         if data.get("wellPotabilityPayer", "na") != "na" or data.get("wellProductivityPayer", "na") != "na":
             map["well_water_within_days_checkbox"] = "X"
-            map["well_water_within_days"] = "10"
+            map["well_water_within_days"] = str(data.get("wellWaterInspectionDays", 10))
 
         if data.get("septicInspectionPayer", "na") != "na" or data.get("septicPumpingPayer", "na") != "na":
             map["plumbing_within_days_checkbox"] = "X"
-            map["plumbing_within_days"] = "10"
+            map["plumbing_within_days"] = str(data.get("septicInspectionDays", 10))
 
         if data.get("surveyPayer", "na") != "na":
             map["survery_checkbox"] = "X"
             map["survey_checkbox"] = "X"
-            map["survey_within_days"] = "10"
-            map["survery_within_days"] = "10"
-            map["Survey_within_days"] = "10"
+            map["survey_within_days"] = str(data.get("surveyInspectionDays", 10))
+            map["survery_within_days"] = str(data.get("surveyInspectionDays", 10))
+            map["Survey_within_days"] = str(data.get("surveyInspectionDays", 10))
 
         # --- ORDERED BY CHECKBOXES ---
         pot_order = data.get("wellPotabilityOrderer")
