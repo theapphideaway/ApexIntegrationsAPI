@@ -312,40 +312,39 @@ def delete_user(request, user_id):
         )
 
 
-class RE21PreviewEndpoint(APIView):
-    def post(self, request, *args, **kwargs):
+class DocumentPreviewEndpoint(APIView):
+    def post(self, request, doc_type, *args, **kwargs):
         # 1. Grab the JSON payload sent from iOS
         form_data = request.data
 
-        # 2. Define where the blank template lives on your server
-        # Make sure you put re21_2026.pdf in your static or media folder
-        template_path = os.path.join(settings.BASE_DIR, 'static', 'pdfs', 're21_2026.pdf')
         try:
-            # 3. Initialize the service and generate the binary PDF data
-            pdf_service = PDFGenerationService(template_path)
+            # 2. Initialize the service with the specific document type
+            # The PDFGenerationService now handles finding the correct template internally
+            pdf_service = PDFGenerationService(doc_type=doc_type)
             pdf_bytes = pdf_service.generate_pdf(form_data)
 
-            # 4. Return the file directly to the iOS app
+            # 3. Return the file directly to the iOS app with a dynamic name
             response = HttpResponse(pdf_bytes, content_type='application/pdf')
-            response['Content-Disposition'] = 'attachment; filename="RE21_Preview.pdf"'
+            response['Content-Disposition'] = f'attachment; filename="{doc_type}_Preview.pdf"'
             return response
 
         except FileNotFoundError as e:
             return Response({"error": str(e)}, status=404)
+        except ValueError as e:
+            return Response({"error": str(e)}, status=400) # Catches invalid doc_types
         except Exception as e:
             return Response({"error": f"Failed to generate PDF: {str(e)}"}, status=500)
 
 
-class RE21CreateSignatureLinkEndpoint(APIView):
+class DocumentCreateSignatureLinkEndpoint(APIView):
     permission_classes = [IsAuthenticated]
 
-    def post(self, request, *args, **kwargs):
+    def post(self, request, doc_type, *args, **kwargs):
         form_data = request.data
-        template_path = os.path.join(settings.BASE_DIR, 'static', 'pdfs', 're21_2026.pdf')
 
         try:
-            # 1. Generate the PDF
-            pdf_service = PDFGenerationService(template_path)
+            # 1. Generate the specific PDF
+            pdf_service = PDFGenerationService(doc_type=doc_type)
             pdf_bytes = pdf_service.generate_pdf(form_data)
 
             # 2. Extract Data for the Database
@@ -354,15 +353,15 @@ class RE21CreateSignatureLinkEndpoint(APIView):
             primary_email = form_data.get("buyerEmail", "test@example.com")
             property_address = form_data.get("propertyAddress", "Unknown Address")
 
-            # 3. Upload Draft to AWS S3
-            # We use a short UUID so if you do 10 offers for "123 Main St", they don't overwrite each other
+            # 3. Upload Draft to AWS S3 with dynamic naming
             file_id = uuid.uuid4().hex[:8]
-            s3_filename = f"drafts/re21_{file_id}.pdf"
-
-            # This pushes the bytes to S3 and returns the clean path: "drafts/re21_1234.pdf"
+            s3_filename = f"drafts/{doc_type}_{file_id}.pdf"
             saved_path = default_storage.save(s3_filename, ContentFile(pdf_bytes))
 
-            # 4. Create the Deal in Postgres
+            # 4. Create or Update the Deal in Postgres
+            # Note: For an RE-21, you create a Deal. For an RE-10 or Addendum,
+            # you would ideally attach it to an *existing* deal. For now, we will
+            # just create a new record to keep your current logic flowing.
             deal = Deal.objects.create(
                 agent=request.user,
                 property_address=property_address,
@@ -376,14 +375,15 @@ class RE21CreateSignatureLinkEndpoint(APIView):
             ds_service = DocuSignService()
             result = ds_service.send_envelope(
                 pdf_bytes=pdf_bytes,
-                buyers=buyers_list
+                buyers=buyers_list,
+                # Consider passing doc_type here so DocuSign names the envelope correctly!
+                document_name=f"{doc_type.upper().replace('_', '-')} Document"
             )
 
             # 6. Update the Deal with the Envelope ID
             deal.docusign_envelope_id = result.get("envelope_id")
             deal.save()
 
-            # Return success to Swift, including the S3 URL for your debugging
             return Response({
                 "status": "sent",
                 "envelope_id": deal.docusign_envelope_id,
@@ -391,6 +391,8 @@ class RE21CreateSignatureLinkEndpoint(APIView):
                 "draft_url": saved_path
             }, status=200)
 
+        except ValueError as e:
+            return Response({"error": str(e)}, status=400)
         except Exception as e:
             return Response({"error": str(e)}, status=500)
 

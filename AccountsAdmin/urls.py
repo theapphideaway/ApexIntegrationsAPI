@@ -1,6 +1,7 @@
 from django.urls import path
 from . import views
-from .views import RE21PreviewEndpoint, FUBAuthCallbackView, FUBSendDocumentView
+from .views import FUBAuthCallbackView, FUBSendDocumentView, DocumentPreviewEndpoint, \
+    DocumentCreateSignatureLinkEndpoint
 
 urlpatterns = [
     path('organizations/', views.organization_list, name='organization-list'),
@@ -13,4 +14,6 @@ urlpatterns = [
     path('users/me/', views.current_user, name='current_user'),
     path('fub/callback/', FUBAuthCallbackView.as_view(), name='fub_auth_callback'),
     path('fub/send/', FUBSendDocumentView.as_view(), name='fub_send_document'),
+    path('documents/preview/<str:doc_type>/', DocumentPreviewEndpoint.as_view(), name='document_preview'),
+    path('documents/send/<str:doc_type>/', DocumentCreateSignatureLinkEndpoint.as_view(), name='document_send'),
 ]

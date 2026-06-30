@@ -1,4 +1,5 @@
 import re
+import textwrap
 
 import fitz  # PyMuPDF
 import os
@@ -15,7 +16,7 @@ class PDFGenerationService:
             raise FileNotFoundError("Could not find the blank RE-21 template in the specified path.")
 
         doc = fitz.open(self.template_path)
-        field_map = self._build_field_map(form_data)
+        field_map = self._map_re21(form_data)
 
         for page in doc:
             widgets_to_delete = []
@@ -73,7 +74,7 @@ class PDFGenerationService:
 
     # MARK: - The Master Field Map
 
-    def _build_field_map(self, data: dict) -> dict:
+    def _map_re21(self, data: dict) -> dict:
         map = {}
 
         # --- FORMATTERS ---
@@ -617,5 +618,359 @@ class PDFGenerationService:
         map["DocuSignHere3"] = "\\s3\\"
         map["DocuSignHere4"] = "\\s4\\"
 
+        return map
+
+
+    def _map_re10(self, data: dict) -> dict:
+        """The master map for the RE-10 Inspection Contingency Notice."""
+        map = {}
+
+        def format_currency(val):
+            try:
+                return f"${int(float(val)):,}"
+            except (ValueError, TypeError):
+                return ""
+
+        today_str = datetime.now().strftime("%m/%d/%Y")
+
+        # --- HEADER INFO ---
+        map['This NOTICE dated'] = today_str
+        map['3 This NOTICE pertains to the Purchase and Sale Agreement Dated'] = data.get("psaDate", "")
+        map['5 ADDRESS'] = data.get("propertyAddress", "")
+        map['PROPERTY ADDRESS'] = data.get("propertyAddress", "")  # Page 2 header
+        map['1 BUYER'] = data.get("buyerName", "")
+        map['9 SELLER'] = data.get("sellerName", "")
+
+        # Default to Buyer sending to Seller (Standard TC workflow)
+        map['Buyer_notice_to_seller'] = "X"
+
+        # --- CONTINGENCY TYPE ---
+        inspection_type = data.get("inspectionType", "primary")
+        if inspection_type == "primary":
+            map['Primary_inspection_contingency'] = "X"
+        elif inspection_type == "secondary":
+            map['Secondary_inspection_contingency'] = "X"
+
+            # Sub-types for Secondary
+            sec_type = data.get("secondaryType", "")
+            if sec_type == "well":
+                map['domestic_well'] = "X"
+            elif sec_type == "septic":
+                map['septic_instepction'] = "X"
+            elif sec_type == "survey":
+                map['survey'] = "X"
+
+        # --- THE DECISION (REMOVAL vs ADDRESS vs TERMINATE) ---
+        decision = data.get("re10Decision", "address")  # remove, address, terminate
+
+        if decision == "remove":
+            map['removal_of_inspection'] = "X"
+
+        elif decision == "terminate":
+            map['termination_provision'] = "X"
+
+        elif decision == "address":
+            map['items_to_be_addressed'] = "X"
+
+            # Credits
+            credit = data.get("sellerCredit")
+            if credit:
+                map['seller_will_credit_buyer'] = "X"
+                map['38  SELLER will credit BUYER'] = format_currency(credit)
+
+            # Price Reduction
+            new_price = data.get("newPurchasePrice")
+            if new_price:
+                map['purchase_price_checkbox'] = "X"
+                map['39 D Purchase Price to be'] = format_currency(new_price)
+
+            # Repairs
+            repairs_text = data.get("repairRequests", "")
+            if repairs_text:
+                map['seller_will_service'] = "X"
+
+                # The exact line fields from the PDF discovery
+                repair_line_fields = [
+                    '42', '45', '46', '47', '48', '49', '50', '51', '52', '53',
+                    '54', '55', '56', '57', '58', '59', '60', '62', '64', '66',
+                    '68', '69', '71', '72', '73', '76', '77', '80'
+                ]
+
+                # Wrap text to ~85 characters per line to fit the PDF boundaries safely
+                wrapped_lines = textwrap.wrap(repairs_text, width=85)
+
+                # Map the wrapped text to the sequential PDF line fields
+                for i, line_text in enumerate(wrapped_lines):
+                    if i < len(repair_line_fields):
+                        field_key = repair_line_fields[i]
+                        map[field_key] = line_text
+
+        # --- DOCUSIGN TAGS ---
+        # Page 1 Initials
+        map['buyer_initial_one_page_one'] = "\\i1\\"
+        if data.get("hasSecondBuyer", False):
+            map['buyer_initial_two_page_one'] = "\\i2\\"
+
+        # Page 2 Signatures
+        map['95 BUYER'] = "\\s1\\"
+        if data.get("hasSecondBuyer", False):
+            map['97 BUYER'] = "\\s2\\"
+
+        return map
+
+
+    def _map_re11(self, data: dict) -> dict:
+        """The master map for the RE-11 Addendum."""
+        map = {}
+
+        today_str = datetime.now().strftime("%m/%d/%Y")
+
+        # --- HEADER INFO ---
+        map['ADDENDUM'] = str(data.get("addendumNumber", "1"))
+        map['Todays Date'] = today_str
+        map['7 AGREEMENT DATED'] = data.get("psaDate", "")
+        map['9 ADDRESS'] = data.get("propertyAddress", "")
+        map['11 BUYERS'] = data.get("buyerName", "")
+        map['13 SELLERS'] = data.get("sellerName", "")
+
+        # Default to modifying the main Purchase and Sale Agreement
+        map['Purchase_and_sale_agreement'] = "X"
+
+        # --- ADDENDUM BODY TEXT ---
+        body_text = data.get("addendumText", "")
+        if body_text:
+            # The exact line fields from the PDF discovery (16 through 46)
+            body_line_fields = [str(i) for i in range(16, 47)]
+
+            # Wrap text to ~85 characters per line to fit the PDF boundaries safely
+            wrapped_lines = textwrap.wrap(body_text, width=85)
+
+            # Map the wrapped text to the sequential PDF line fields
+            for i, line_text in enumerate(wrapped_lines):
+                if i < len(body_line_fields):
+                    field_key = body_line_fields[i]
+                    map[field_key] = line_text
+
+        # --- DOCUSIGN TAGS ---
+        # Buyer Signatures
+        map['53 BUYER'] = "\\s1\\"
+        if data.get("hasSecondBuyer", False):
+            map['55 BUYER'] = "\\s2\\"
+
+        # Seller Signatures (Pre-tagged for the listing agent's clients)
+        map['57 SELLER'] = "\\s3\\"
+        if data.get("hasSecondSeller", False):
+            map['59 SELLER'] = "\\s4\\"
+
+        return map
+
+    def _map_re13(self, data: dict) -> dict:
+        """The master map for the RE-13 Counter Offer."""
+        map = {}
+
+        def format_date(date_str):
+            if not date_str: return ""
+            try:
+                dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+                return dt.strftime("%m/%d/%Y")
+            except ValueError:
+                return date_str
+
+        today_str = datetime.now().strftime("%m/%d/%Y")
+
+        # --- HEADER INFO ---
+        map['RE13 COUNTER OFFER'] = str(data.get("counterOfferNumber", "1"))
+        map['Todays Date'] = today_str
+        map['3 This is a COUNTER OFFER to the Purchase and Sale Agreement Dated'] = format_date(data.get("psaDate", ""))
+        map['5 ADDRESS'] = data.get("propertyAddress", "")
+        map['7 BUYER'] = data.get("buyerName", "")
+        map['9 SELLER'] = data.get("sellerName", "")
+
+        # --- ORIGINATOR ---
+        # Determines which box is checked at the top
+        is_seller_counter = data.get("isSellerCounter", True)
+        if is_seller_counter:
+            map['seller_counter_offer'] = "X"
+        else:
+            map['buyer_counter_offer'] = "X"
+
+        # --- ATTACHMENTS ---
+        attached_addendums = data.get("attachedAddendums", "")
+        if attached_addendums:
+            map['counter_offer_includes_addendum'] = "X"
+            map['17 COUNTEROFFER INCLUDES ATTACHED ADDENDUMS'] = attached_addendums
+
+        attached_exhibits = data.get("attachedExhibits", "")
+        if attached_exhibits:
+            map['counter_offer_includes_exhibit'] = "X"
+            map['18 COUNTEROFFER INCLUDES ATTACHED EXHIBITS'] = attached_exhibits
+
+        # --- COUNTER OFFER BODY TEXT ---
+        body_text = data.get("counterOfferText", "")
+        if body_text:
+            # The exact line fields from the PDF discovery (19 through 40)
+            body_line_fields = [str(i) for i in range(19, 41)]
+
+            # Wrap text to ~85 characters per line to fit the PDF boundaries safely
+            wrapped_lines = textwrap.wrap(body_text, width=85)
+
+            # Map the wrapped text to the sequential PDF line fields
+            for i, line_text in enumerate(wrapped_lines):
+                if i < len(body_line_fields):
+                    field_key = body_line_fields[i]
+                    map[field_key] = line_text
+
+        # --- EXPIRATION DEADLINE ---
+        exp_date = data.get("offerExpirationDate", "")
+        if exp_date:
+            map['51 before date'] = format_date(exp_date)
+
+        exp_time = data.get("offerExpirationTime", "")
+        if exp_time:
+            upper_time = exp_time.upper()
+            if "AM" in upper_time:
+                map['Before_date_am'] = "X"
+            elif "PM" in upper_time:
+                map['Before_date_pm'] = "X"
+
+            clean_time = upper_time.replace("AM", "").replace("PM", "").strip()
+            map['at'] = clean_time
+
+        # --- DOCUSIGN TAGS ---
+        # Sellers (Top block in signature area)
+        map['56 SELLER'] = "\\s3\\"
+        if data.get("hasSecondSeller", False):
+            map['58 SELLER'] = "\\s4\\"
+
+        # Buyers (Bottom block in signature area)
+        map['60 BUYER'] = "\\s1\\"
+        if data.get("hasSecondBuyer", False):
+            map['62 BUYER'] = "\\s2\\"
+
+        return map
+
+
+    def _map_re14(self, data: dict) -> dict:
+        """The master map for the RE-14 Buyer Representation Agreement."""
+        map = {}
+
+        def format_date(date_str):
+            if not date_str: return ""
+            try:
+                dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+                return dt.strftime("%m/%d/%Y")
+            except ValueError:
+                return date_str
+
+        today_str = datetime.now().strftime("%m/%d/%Y")
+
+        buyer_1 = data.get("buyerName", "")
+        buyer_2 = data.get("buyerNameTwo", "")
+        both_buyers = f"{buyer_1} and {buyer_2}" if buyer_2 else buyer_1
+
+        # --- HEADER INFO ---
+        map['buyer_name'] = both_buyers
+        map['3 1 BUYER'] = both_buyers
+        map['BUYERS NAMES'] = both_buyers  # Page 2 header
+        map['BUYERS NAMES_2'] = both_buyers  # Page 3 header
+
+        map['Acting as Agent for the Broker'] = data.get("agentName", "Ian Schoenrock")
+        map['Broker of'] = data.get("brokerageName", "Top Notch Real Estate")
+
+        # --- PROPERTY CRITERIA ---
+        prop_type = data.get("propertyType", "residential")  # residential, income, commercial, land, build, other
+        if prop_type == "residential":
+            map['residential'] = "X"
+        elif prop_type == "income":
+            map['residential_income'] = "X"
+        elif prop_type == "commercial":
+            map['commercial'] = "X"
+        elif prop_type == "land":
+            map['vacant_land'] = "X"
+        elif prop_type == "build":
+            map['custom_build_land'] = "X"
+        else:
+            map['Other'] = "X"
+
+        map['19 Applicable Citys'] = data.get("searchCity", "")
+        map[' Idaho'] = data.get("searchState", "Idaho")
+        map['20 Applicable Countys'] = data.get("searchCounty", "")
+        map['21 Other Description ie geographical area price etc'] = data.get("searchDescription", "")
+
+        # --- TERM ---
+        map[
+            '23 2 TERM OF AGREEMENT This BUYER REPRESENTATION AGREEMENT herein after referred to as Agreement is in force from'] = format_date(
+            data.get("startDate", today_str))
+        map['and will expire at 11 59 pm on date'] = format_date(data.get("endDate", ""))
+
+        # --- COMPENSATION ---
+        comp_type = data.get("compensationType", "percentage")
+        if comp_type == "percentage":
+            map['Percentage_of_sales'] = "X"
+            # Maps to the __% line
+            map[
+                'Buyer instructs the Broker to seek to obtain this fee through the transaction paid by the seller or'] = str(
+                data.get("compensationPercentage", "3"))
+
+            flat_fee = data.get("compensationFlatFee")
+            if flat_fee:
+                # Maps to the $___ flat fee line
+                map[
+                    '41 the listing brokerage If the fee cannot be obtained through the seller or the listing brokerage the BUYER will be responsible for the fee'] = str(
+                    flat_fee)
+
+        # --- CANCELLATION FEE ---
+        map[
+            '65 and as a special condition of this agreement BUYER shall be liable to Broker for a cancellation fee equal to'] = str(
+            data.get("cancellationPercentage", "3"))
+
+        # --- OTHER TERMS ---
+        map['171 16 OTHER TERMS AND CONDITIONS'] = data.get("otherTerms", "")
+
+        # --- AGENCY ELECTION (PAGE 3) ---
+        agency_type = data.get("agencyType", "dual")  # 'dual' or 'single'
+
+        if agency_type == "dual":
+            map['buyer_one_dual_agency'] = "\\i1\\"
+            if buyer_2:
+                map['buyer_two_dual_agency'] = "\\i2\\"
+        else:
+            map['buyer_one_single_agency'] = "\\i1\\"
+            if buyer_2:
+                map['buyer_two_single_agency'] = "\\i2\\"
+
+        # --- BOTTOM OF PAGE INITIALS ---
+        # DocuSign will automatically drop initials wherever it finds these tags
+        map['undefined_2'] = "\\i1\\"  # Page 1 bottom
+        map['undefined_3'] = "\\i1\\"  # Page 2 bottom
+        map['undefined_4'] = "\\i1\\"  # Page 3 bottom
+
+        # --- SIGNATURES (PAGE 4) ---
+        # Since standard signature fields can block PyMuPDF, we drop the invisible
+        # \s1\ anchors into the nearby text fields (like Date and Phone).
+
+        map['Date_4'] = "\\s1\\"  # Buyer 1 Signature Anchor
+        map['211 Phone'] = data.get("buyerPhone", "")
+        map['Email'] = data.get("buyerEmail", "")
+
+        if buyer_2:
+            map['Date_6'] = "\\s2\\"  # Buyer 2 Signature Anchor
+            map['217 Phone'] = data.get("buyerTwoPhone", "")
+            map['Email_3'] = data.get("buyerTwoEmail", "")
+
+        map['Date_5'] = "\\s3\\"  # Agent Signature Anchor
+        map['Agent Phone'] = data.get("agentPhone", "")
+        map['Email_4'] = data.get("agentEmail", "")
+
+        return map
+
+    def _map_agency_disclosure(self, data: dict) -> dict:
+        """Stub for the Idaho Agency Disclosure Brochure."""
+        map = {}
+        return map
+
+    def _map_lead_based_paint(self, data: dict) -> dict:
+        """Stub for the Lead-Based Paint Disclosure."""
+        map = {}
         return map
 
