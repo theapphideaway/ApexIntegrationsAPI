@@ -965,12 +965,66 @@ class PDFGenerationService:
         return map
 
     def _map_agency_disclosure(self, data: dict) -> dict:
-        """Stub for the Idaho Agency Disclosure Brochure."""
+        """The master map for the Idaho Agency Disclosure Brochure."""
         map = {}
+
+        # --- BROKERAGE INFO (PAGE 2) ---
+        # ⚠️ NOTE: Replace these keys with the exact field names from your discovery script!
+        map['BROKERAGE'] = data.get("brokerageName", "Top Notch Real Estate")
+        map['DESIGNATED BROKER'] = data.get("designatedBroker", "")
+        map['PHONE NUMBER'] = data.get("brokeragePhone", "")
+
+        # --- DOCUSIGN TAGS (PAGE 2) ---
+        # We will use DocuSign anchor tags for the signatures.
+        # ⚠️ NOTE: Replace 'Signature_1' and 'Signature_2' with the actual PDF field names.
+        map['Signature_1'] = "\\s1\\"
+
+        if data.get("hasSecondBuyer", False):
+            map['Signature_2'] = "\\s2\\"
+
         return map
 
     def _map_lead_based_paint(self, data: dict) -> dict:
-        """Stub for the Lead-Based Paint Disclosure."""
+        """The master map for the Lead-Based Paint Disclosure."""
         map = {}
+
+        # --- HEADER INFO ---
+        map['Address'] = data.get("propertyAddress", "")
+
+        has_second_buyer = data.get("hasSecondBuyer", False)
+
+        # --- BUYER INITIALS (SECTIONS C, D, E) ---
+        # DocuSign will prompt the buyer to initial everywhere we drop \i1\
+
+        # (c) Purchaser has received copies of records OR no records
+        received_records = data.get("receivedRecords", False)
+        if received_records:
+            map['c Purchaser has initial i or ii below'] = "\\i1\\"
+        else:
+            map['based paint hazards in the housing listed above'] = "\\i1\\"
+
+        # (d) Purchaser has received the pamphlet
+        map['hazards in the housing'] = "\\i1\\"
+
+        # (e) 10-day inspection window OR waived inspection
+        waived_inspection = data.get("waivedInspection", True)
+        if waived_inspection:
+            map['or inspection for the presence of leadbased paint andor lead based paint hazards or'] = "\\i1\\"
+        else:
+            map['e Purchaser has initial i or ii below'] = "\\i1\\"
+
+        # --- AGENT INITIALS (SECTION G) ---
+        map['hisher responsibility to ensure compliance'] = "\\i3\\"  # Agent initials
+
+        # --- SIGNATURES ---
+        # Since 'Seller' and 'Seller_2' were captured by your script, they are likely
+        # the first two signature lines. We will drop the invisible tags there.
+        # Ensure you double check these in Acrobat if the signatures don't align perfectly!
+        map['Seller'] = "\\s1\\"
+        if has_second_buyer:
+            map['Seller_2'] = "\\s2\\"
+
+        map['have provided is true and accurate'] = "\\s3\\"  # Agent Signature
+
         return map
 
