@@ -3,6 +3,7 @@ import os
 from docusign_esign import ApiClient, EnvelopesApi, EnvelopeDefinition, Document, Signer, SignHere, Tabs, Recipients, \
     RecipientViewRequest, InitialHere
 
+from AccountsAdmin.pdf_service import PDFGenerationService
 from ApexIntegrationsAPI import settings
 
 
@@ -226,4 +227,42 @@ class DocuSignService:
             pdf_bytes = f.read()
 
         return pdf_bytes
+
+    def send_bundle_envelope(self, bundled_data: dict, buyers: list):
+        """
+        bundled_data should look like:
+        {
+            "re21": {...},
+            "agency_disclosure": {...},
+            "re14": {...}
+        }
+        """
+        api_client = self._get_api_client()
+        envelopes_api = EnvelopesApi(api_client)
+
+        # 1. Generate all PDFs
+        docs_to_send = []
+        for doc_type, data in bundled_data.items():
+            service = PDFGenerationService(doc_type=doc_type)
+            pdf_bytes = service.generate_pdf(data)
+
+            # Create a Document object for DocuSign
+            doc = Document(
+                document_base64=base64.b64encode(pdf_bytes).decode('ascii'),
+                name=f"{doc_type}.pdf",
+                document_id=doc_type
+            )
+            docs_to_send.append(doc)
+
+        # 2. Configure the Envelope
+        envelope_definition = EnvelopeDefinition(
+            email_subject="Please sign your Onboarding Packet",
+            documents=docs_to_send,
+            # DocuSign automatically appends signature fields if you use anchor tagging
+            # (\s1\, \i1\) in your PDF Generation maps.
+            status="sent",
+            recipients=Recipients(signers=self._build_signers(buyers))
+        )
+
+        return envelopes_api.create_envelope(self.account_id, envelope_definition=envelope_definition)
 

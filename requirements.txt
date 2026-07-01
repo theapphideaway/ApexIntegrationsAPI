@@ -8,3 +8,4 @@ python-dotenv~=1.2.2
 boto3
 django-storages
 requests~=2.31.0
+fitz

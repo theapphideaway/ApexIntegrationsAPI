@@ -5,11 +5,43 @@ import fitz  # PyMuPDF
 import os
 from datetime import datetime
 from num2words import num2words
+from django.conf import settings
+
+
+class DocumentType:
+    RE_21 = "re_21"
+    RE_10 = "re_10"
+    RE_11 = "re_11"
+    RE_13 = "re_13"
+    RE_14 = "re_14"
+    AGENCY_DISCLOSURE = "agency_disclosure"
+    LEAD_PAINT = "lead_based_paint"
 
 
 class PDFGenerationService:
-    def __init__(self, template_path):
-        self.template_path = template_path
+    # 2. Update the initialization to take doc_type instead of a hardcoded path
+    def __init__(self, doc_type: str):
+        self.doc_type = doc_type
+        self.template_path = self._get_template_path(doc_type)
+
+    # 3. Add the internal router that matches the type to the correct file
+    def _get_template_path(self, doc_type: str) -> str:
+        """Routes the requested document type to the correct blank PDF template."""
+        templates = {
+            DocumentType.RE_21: 're21_2026.pdf',
+            DocumentType.RE_10: 'RE-10_Inspection_Contingency_Notice_all_fields.pdf',
+            DocumentType.RE_11: 'RE-11_Addendum_full_fields.pdf',
+            DocumentType.RE_13: 'RE-13_Counter_Offer_all_fields.pdf',
+            DocumentType.RE_14: 'RE-14_Buyer_Representation_Agreement_all_fields.pdf',
+            DocumentType.AGENCY_DISCLOSURE: 'Agency_Disclosure_Brochure_All_Fields.pdf',
+            DocumentType.LEAD_PAINT: 'Lead_Based_Paint_Disclosure_All_Fields.pdf',
+        }
+
+        file_name = templates.get(doc_type)
+        if not file_name:
+            raise ValueError(f"Unknown document type requested: {doc_type}")
+
+        return os.path.join(settings.BASE_DIR, 'static', 'pdfs', file_name)
 
     def generate_pdf(self, form_data: dict) -> bytes:
         if not os.path.exists(self.template_path):
