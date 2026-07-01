@@ -139,7 +139,7 @@ class PDFGenerationService:
         seller_name = data.get("sellerName", "")
         seller_name_two = data.get("sellerNameTwo", "")
 
-        map["1 BUYER"] = buyer_name
+        map["1 BUYER"] = buyer_name + " and " + buyer_name_two
         map["BUYER Print Name"] = buyer_name
         map["BUYER Print Name_2"] = buyer_name_two
         map["SELLER Print Name"] = seller_name
