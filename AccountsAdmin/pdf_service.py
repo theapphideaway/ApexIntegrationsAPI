@@ -44,64 +44,53 @@ class PDFGenerationService:
         return os.path.join(settings.BASE_DIR, 'static', 'pdfs', file_name)
 
     def generate_pdf(self, form_data: dict) -> bytes:
-        if not os.path.exists(self.template_path):
-            raise FileNotFoundError("Could not find the blank RE-21 template in the specified path.")
-
+        # Load the blank template we determined in __init__
         doc = fitz.open(self.template_path)
-        field_map = self._map_re21(form_data)
 
+        # 1. ROUTE TO THE CORRECT MAPPING FUNCTION
+        if self.doc_type == DocumentType.RE_21:
+            field_map = self._map_re21(form_data)
+        elif self.doc_type == DocumentType.RE_10:
+            field_map = self._map_re10(form_data)
+        elif self.doc_type == DocumentType.RE_11:
+            field_map = self._map_re11(form_data)
+        elif self.doc_type == DocumentType.RE_13:
+            field_map = self._map_re13(form_data)
+        elif self.doc_type == DocumentType.RE_14:
+            field_map = self._map_re14(form_data)
+        elif self.doc_type == DocumentType.AGENCY_DISCLOSURE:
+            field_map = self._map_agency_disclosure(form_data)
+        elif self.doc_type == DocumentType.LEAD_PAINT:
+            field_map = self._map_lead_based_paint(form_data)
+        else:
+            raise ValueError(f"No mapping function defined for {self.doc_type}")
+
+        # 2. POPULATE THE PDF (Your existing logic)
         for page in doc:
-            widgets_to_delete = []
-
-            # 1. Iterate specifically over form fields (widgets), not generic annotations
             for annot in page.widgets():
-
-                # 2. Grab the actual human-readable AcroForm name
                 field_name = getattr(annot, "field_name", "")
-                if not field_name:
-                    continue
-
-                # Intercept Signature Fields
-                is_sig = (annot.field_type == fitz.PDF_WIDGET_TYPE_SIGNATURE)
-                is_labeled_sig = "signature" in field_name.lower()
-
-                if is_sig or is_labeled_sig:
-                    continue
-
-                # Handle Standard Text Fields
                 if field_name in field_map:
                     value_to_insert = str(field_map[field_name])
-                    print(f"DEBUG: Inserting '{value_to_insert}' into '{field_name}'")
-                    # --- TARGETED OVERRIDE FOR DOCUSIGN TEXT TAGS (\s1\, etc.) ---
-                    if "\\s" in value_to_insert or "\\i" in value_to_insert:
-                        rect = annot.rect
-                        widgets_to_delete.append(annot)
 
-                        # Log the coordinates so we can see if the box is 'empty'
-                        print(f"DEBUG: Printing {value_to_insert} at Rect: {rect}")
+                    # If it's a true Checkbox/Radio button
+                    if annot.field_type == fitz.PDF_WIDGET_TYPE_BUTTON:
+                        if value_to_insert.lower() in ["true", "x", "yes", "on"]:
+                            annot.field_value = "Yes"
+                        else:
+                            annot.field_value = "Off"
 
-                        # Use insert_text instead of insert_textbox to bypass 'fit' checks
-                        # we use rect.bl (bottom-left) and nudge it up 2 pixels so it doesn't hit the line
-                        page.insert_text(
-                            (rect.x0, rect.y1 - 2),
-                            value_to_insert,
-                            fontsize=10,
-                            color=(1, 1, 1)  # Keep black for this test
-                        )
-                        continue
+                    # If it's a Text Field
+                    elif annot.field_type == fitz.PDF_WIDGET_TYPE_TEXT:
+                        annot.field_value = value_to_insert
+                        if value_to_insert == "X":
+                            annot.text_quadding = 1
 
-                    # --- STANDARD TEXT WIDGET LOGIC ---
-                    annot.field_value = value_to_insert
-
-                    if value_to_insert == "X":
-                        annot.text_quadding = 1
-
-                    # Lock down flat (Make Read-Only)
                     annot.update()
 
-            # 3. Clean up replaced annotations using the dedicated widget deletion method
-            for annot in widgets_to_delete:
-                page.delete_widget(annot)
+        # Optional: Flatten all pages
+        for page in doc:
+            page.clean_contents()
+
         return doc.tobytes(garbage=4, deflate=True)
 
     # MARK: - The Master Field Map
@@ -905,9 +894,9 @@ class PDFGenerationService:
         map['3 1 BUYER'] = both_buyers
         map['BUYERS NAMES'] = both_buyers  # Page 2 header
         map['BUYERS NAMES_2'] = both_buyers  # Page 3 header
+        map['Broker of'] = both_buyers
 
         map['Acting as Agent for the Broker'] = data.get("agentName", "Ian Schoenrock")
-        map['Broker of'] = data.get("brokerageName", "Top Notch Real Estate")
 
         # --- PROPERTY CRITERIA ---
         prop_type = data.get("propertyType", "residential")  # residential, income, commercial, land, build, other
