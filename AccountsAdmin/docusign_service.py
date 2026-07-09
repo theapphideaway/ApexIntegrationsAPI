@@ -228,41 +228,85 @@ class DocuSignService:
 
         return pdf_bytes
 
-    def send_bundle_envelope(self, bundled_data: dict, buyers: list):
+    def send_bundle_envelope(self, bundled_data: dict, buyers: list) -> dict:
         """
-        bundled_data should look like:
-        {
-            "re21": {...},
-            "agency_disclosure": {...},
-            "re14": {...}
-        }
+        Generates all PDFs in the bundle, stitches them into a single DocuSign
+        envelope, and emails it directly to the buyers for remote execution.
         """
-        api_client = self._get_api_client()
-        envelopes_api = EnvelopesApi(api_client)
+        access_token = self._get_access_token()
 
-        # 1. Generate all PDFs
+        api_client = ApiClient()
+        api_client.host = self.base_path
+        api_client.set_default_header("Authorization", f"Bearer {access_token}")
+
+        # 1. Generate and package all PDFs into the envelope
         docs_to_send = []
-        for doc_type, data in bundled_data.items():
+        # DocuSign requires document IDs to be unique sequential strings ("1", "2", "3")
+        for idx, (doc_type, data) in enumerate(bundled_data.items(), start=1):
             service = PDFGenerationService(doc_type=doc_type)
             pdf_bytes = service.generate_pdf(data)
 
-            # Create a Document object for DocuSign
             doc = Document(
-                document_base64=base64.b64encode(pdf_bytes).decode('ascii'),
-                name=f"{doc_type}.pdf",
-                document_id=doc_type
+                document_base64=base64.b64encode(pdf_bytes).decode('utf-8'),
+                name=f"{doc_type.upper().replace('_', ' ')}",
+                file_extension="pdf",
+                document_id=str(idx)
             )
             docs_to_send.append(doc)
 
-        # 2. Configure the Envelope
+        # 2. Build Remote Signers (Omit client_user_id so DocuSign handles the emails)
+        docusign_signers = []
+        for index, buyer in enumerate(buyers):
+            signer_id = str(index + 1)
+
+            signer = Signer(
+                email=buyer['email'],
+                name=buyer['name'],
+                recipient_id=signer_id,
+                routing_order="1"  # Both get the email concurrently
+            )
+
+            # DocuSign scans ALL attached documents for these string patterns
+            sign_here = SignHere(
+                anchor_string=f"\\s{signer_id}\\",
+                anchor_units="pixels",
+                anchor_y_offset="0",
+                anchor_x_offset="0"
+            )
+
+            initial_here = InitialHere(
+                anchor_string=f"\\i{signer_id}\\",
+                anchor_units="pixels",
+                anchor_y_offset="0",
+                anchor_x_offset="0"
+            )
+
+            signer.tabs = Tabs(
+                sign_here_tabs=[sign_here],
+                initial_here_tabs=[initial_here]
+            )
+            docusign_signers.append(signer)
+
+        # 3. Create and Send the Envelope
         envelope_definition = EnvelopeDefinition(
-            email_subject="Please sign your Onboarding Packet",
+            email_subject="Please sign your Onboarding & Purchase Packet",
             documents=docs_to_send,
-            # DocuSign automatically appends signature fields if you use anchor tagging
-            # (\s1\, \i1\) in your PDF Generation maps.
-            status="sent",
-            recipients=Recipients(signers=self._build_signers(buyers))
+            recipients=Recipients(signers=docusign_signers),
+            status="sent"  # Fires off the emails immediately
         )
 
-        return envelopes_api.create_envelope(self.account_id, envelope_definition=envelope_definition)
+        envelopes_api = EnvelopesApi(api_client)
+        envelope_summary = envelopes_api.create_envelope(
+            account_id=self.account_id,
+            envelope_definition=envelope_definition
+        )
+
+        # 4. Return the status and unique ID back to your view layer
+        return {
+            "status": "sent",
+            "envelope_id": envelope_summary.envelope_id
+        }
+
+
+
 

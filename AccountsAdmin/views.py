@@ -30,7 +30,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import Organization, CustomUser, OTPCode, Deal
 from .serializers import OrganizationSerializer, CustomUserSerializer, DealSerializer
-from django.core.mail import send_mail
+from django.core.mail import send_mail, EmailMessage
 from django.conf import settings
 from django.http import HttpResponse
 
@@ -731,3 +731,54 @@ class FUBSendDocumentView(APIView):
             return Response({"status": "success", "personId": person_id})
         else:
             return Response({"error": "Failed to add note to FUB", "details": note_res.text}, status=400)
+
+
+logger = logging.getLogger(__name__)
+
+
+class DistributeExecutedPacketEndpoint(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        payload = request.data
+        envelope_id = payload.get("envelope_id")
+        title_email = payload.get("title_email", "").strip()
+        lender_email = payload.get("lender_email", "").strip()
+        property_address = payload.get("property_address", "").strip()
+
+        if not envelope_id:
+            return Response({"error": "Missing envelope_id"}, status=400)
+        if not property_address:
+            return Response({"error": "Missing property_address"}, status=400)
+        if not title_email and not lender_email:
+            return Response({"error": "At least one destination email (Title or Lender) is required"}, status=400)
+
+        try:
+            # 1. Download the fully signed combined PDF from DocuSign
+            logger.info(f"📥 Downloading executed packet for envelope {envelope_id}...")
+            ds_service = DocuSignService()
+            pdf_bytes = ds_service.download_envelope_document(envelope_id)
+
+            # 2. Build the distribution email targets
+            destinations = []
+            if title_email: destinations.append(title_email)
+            if lender_email: destinations.append(lender_email)
+
+            # 3. Use Django's native EmailMessage to forward the file
+            email = EmailMessage(
+                subject="EXECUTED CONTRACT PACKET - 123 Main St",
+                body=f"Hello,\n\nPlease find attached the fully executed contract packet for the purchase of {property_address}.\n\nThank you,\nApex Automated Transaction Coordinator",
+                from_email="coordinator@apexintegrations.ai",
+                to=destinations
+            )
+
+            # Attach the raw PDF bytes cleanly
+            email.attach("Executed_Contract_Packet.pdf", pdf_bytes, "application/pdf")
+            email.send(fail_silently=False)
+
+            logger.info(f"✅ Executed packet cleanly delivered to: {', '.join(destinations)}")
+            return Response({"status": "distributed", "delivered_to": destinations}, status=200)
+
+        except Exception as e:
+            logger.error(f"❌ Failed to distribute executed packet: {str(e)}")
+            return Response({"error": f"Distribution failed: {str(e)}"}, status=500)
