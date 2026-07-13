@@ -154,7 +154,7 @@ EMAIL_PORT = 587
 EMAIL_USE_TLS = True
 EMAIL_USE_SSL = False
 EMAIL_HOST_USER = 'ianschoenrock@gmail.com' # Your Gmail address
-EMAIL_HOST_PASSWORD = 'nlltzwmbfwwewsxi' # The code from Google
+EMAIL_HOST_PASSWORD = 'mxwilizxkpppwlcx' # The code from Google
 DEFAULT_FROM_EMAIL = 'Real Estate App <your-email@gmail.com>'
 
 # AWS S3 Configuration
