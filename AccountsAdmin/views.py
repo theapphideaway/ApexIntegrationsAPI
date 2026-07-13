@@ -3,6 +3,7 @@ import logging
 import os
 import urllib
 import uuid
+import pusher
 
 import fitz
 from django.contrib.auth import get_user_model
@@ -35,6 +36,13 @@ from django.core.mail import send_mail, EmailMessage
 from django.conf import settings
 from django.http import HttpResponse
 
+pusher_client = pusher.Pusher(
+    app_id='2176134',
+    key='8fb0496bbb7f0c5b2c4e',
+    secret='fcb993754b1059c86bd3',
+    cluster='us2',
+    ssl=True
+)
 
 def landing_page(request):
     return render(request, 'landing_page.html')
@@ -448,27 +456,47 @@ def docusign_webhook(request):
     event = data.get("event")
     if event == "envelope-completed":
         envelope_id = data.get("data", {}).get("envelopeId")
-        print(f"DEBUG: Envelope {envelope_id} is FULLY SIGNED!")
+        print(f"📂 [WEBHOOK] Envelope {envelope_id} is FULLY SIGNED!")
 
         # 2. Extract the signed PDF
-        # DocuSign Connect can be configured to include the document as a base64 string
         documents = data.get("data", {}).get("envelopeSummary", {}).get("documents", [])
 
         if documents:
             signed_pdf_b64 = documents[0].get("PDFBytes")
             pdf_bytes = base64.b64decode(signed_pdf_b64)
 
-            # 3. Save the file locally for now
+            # Save under media directory cleanly using Django settings
             file_name = f"signed_re21_{envelope_id}.pdf"
-            file_path = os.path.join('media', 'signed_contracts', file_name)
+            relative_storage_path = os.path.join('signed_contracts', file_name)
+            absolute_file_path = os.path.join(settings.MEDIA_ROOT, relative_storage_path)
 
-            os.makedirs(os.path.dirname(file_path), exist_ok=True)
-            with open(file_path, "wb") as f:
+            os.makedirs(os.path.dirname(absolute_file_path), exist_ok=True)
+            with open(absolute_file_path, "wb") as f:
                 f.write(pdf_bytes)
 
-            print(f"DEBUG: Successfully saved signed contract to {file_path}")
+            print(f"💾 [WEBHOOK] Successfully saved signed contract to {absolute_file_path}")
 
-            # TODO: Trigger an email to the agent or a push notification to iOS
+            # 🚀 CONNECTING THE DOTS: Database Sync & Push Notification
+            try:
+                deal = Deal.objects.get(docusign_envelope_id=envelope_id)
+                deal.status = 'fully_executed'
+                deal.save()
+
+                # 🚀 DYNAMIC BROADCAST
+                # Instead of 'my-channel', scope it to the specific transaction row ID
+                channel_name = f"deal_{deal.id}"
+
+                pusher_client.trigger(
+                    channel_name,
+                    're-21_signed',  # This matches the event the UI listens for
+                    {
+                        'envelope_id': envelope_id,
+                        'status': 'fully_executed'
+                    }
+                )
+                print(f"📡 [PUSHER SUCCESS] Broadcasted signature event to {channel_name}")
+            except Deal.DoesNotExist:
+                print(f"⚠️ [WEBHOOK WARNING] No matching Deal found in database for envelope: {envelope_id}")
 
     return Response({"status": "received"}, status=200)
 
