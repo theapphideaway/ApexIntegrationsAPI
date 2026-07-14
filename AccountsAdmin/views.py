@@ -422,11 +422,10 @@ class DocumentCreateSignatureLinkEndpoint(APIView):
             # 5. Send to DocuSign
             buyers_list = [{"name": name, "email": primary_email} for name in buyer_names]
             ds_service = DocuSignService()
+
             result = ds_service.send_envelope(
                 pdf_bytes=pdf_bytes,
-                buyers=buyers_list,
-                # Consider passing doc_type here so DocuSign names the envelope correctly!
-                document_name=f"{doc_type.upper().replace('_', '-')} Document"
+                buyers=buyers_list
             )
 
             # 6. Update the Deal with the Envelope ID
