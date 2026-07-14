@@ -399,7 +399,7 @@ class DocumentCreateSignatureLinkEndpoint(APIView):
             # 2. Extract Data for the Database
             raw_buyer_name = form_data.get("buyerName", "Test Buyer")
             buyer_names = [n.strip() for n in raw_buyer_name.split(" and ")]
-            primary_email = form_data.get("buyerEmail", "test@example.com")
+            primary_email = form_data.get("buyerEmail", "ianschoenrock@gmail.com")
             property_address = form_data.get("propertyAddress", "Unknown Address")
 
             # 3. Upload Draft to AWS S3 with dynamic naming
@@ -447,7 +447,7 @@ class DocumentCreateSignatureLinkEndpoint(APIView):
 
 @csrf_exempt
 @api_view(['POST'])
-@permission_classes([AllowAny])  # DocuSign needs to hit this without a login
+@permission_classes([AllowAny])
 def docusign_webhook(request):
     data = request.data
 
