@@ -15,7 +15,7 @@ from django.shortcuts import render
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from docusign_esign import EnvelopesApi, ApiClient
-from rest_framework.generics import ListAPIView, DestroyAPIView
+from rest_framework.generics import ListCreateAPIView, DestroyAPIView, RetrieveAPIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.views import APIView
 import requests
@@ -551,14 +551,13 @@ class RE21ContractStatusEndpoint(APIView):
             return Response({"error": str(e)}, status=500)
 
 
-class AgentDealsListView(ListAPIView):
+class AgentDealsListCreateView(ListCreateAPIView):
     serializer_class = DealSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         user = self.request.user
 
-        # 👇 Add these debug prints
         print(f"\n=== DEALS LIST DEBUG ===")
         print(f"Request User Email: {user.email}")
         print(f"Request User ID: {user.id}")
@@ -576,6 +575,26 @@ class AgentDealsListView(ListAPIView):
         print(f"Normal Agent Route Triggered. Found {deals.count()} deals.")
         print(f"========================\n")
         return deals
+
+    def perform_create(self, serializer):
+        """
+        When the app sends a POST to this endpoint, automatically
+        tie the new Deal to the currently authenticated Agent.
+        """
+        serializer.save(agent=self.request.user)
+
+
+class DealDetailEndpoint(RetrieveAPIView):
+    """
+    GET /api/deals/<id>/
+    Fetches a single deal's full state from Postgres.
+    """
+    serializer_class = DealSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        # SECURITY: Ensure agents can only pull details of their own deals
+        return Deal.objects.filter(agent=self.request.user)
 
 
 class DealDeleteEndpoint(DestroyAPIView):

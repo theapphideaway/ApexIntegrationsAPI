@@ -22,12 +22,12 @@ from rest_framework_simplejwt.views import TokenRefreshView
 from AccountsAdmin.views import (
     docusign_webhook,
     RE21ContractStatusEndpoint,
-    AgentDealsListView,
+    AgentDealsListCreateView,
     DealDeleteEndpoint,
     landing_page,
     DocumentPreviewEndpoint,
     DocumentCreateSignatureLinkEndpoint,
-    OnboardingBundlePreviewEndpoint
+    OnboardingBundlePreviewEndpoint, DealDetailEndpoint
 )
 
 urlpatterns = [
@@ -41,7 +41,8 @@ urlpatterns = [
 
     path('api/contracts/webhook/', docusign_webhook, name='docusign_webhook'),
     path('api/contracts/status/<str:envelope_id>/', RE21ContractStatusEndpoint.as_view(), name='contract_status'),
-    path('api/deals/', AgentDealsListView.as_view(), name='agent_deals'),
+    path('api/deals/', AgentDealsListCreateView.as_view(), name='agent-deals-list-create'),
+    path('api/deals/<int:pk>/', DealDetailEndpoint.as_view(), name='deal-detail'),
     path('api/deals/<int:pk>/', DealDeleteEndpoint.as_view(), name='delete_deal'),
 
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
