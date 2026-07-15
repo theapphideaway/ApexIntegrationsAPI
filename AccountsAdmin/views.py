@@ -463,7 +463,7 @@ def docusign_webhook(request):
             envelope_id = data.get("data", {}).get("envelopeId")
             print(f"📂 [TRACE 2] Envelope {envelope_id} is FULLY SIGNED!")
 
-            documents = data.get("data", {}).get("envelopeSummary", {}).get("documents", [])
+            documents = data.get("data", {}).get("envelopeSummary", {}).get("envelopeDocuments", [])
             print(f"📊 [TRACE 3] Found {len(documents)} document(s) in payload.")
 
             if not documents:
