@@ -450,50 +450,49 @@ class DocumentCreateSignatureLinkEndpoint(APIView):
 @permission_classes([AllowAny])
 def docusign_webhook(request):
     data = request.data
-
-    # 1. Check the status
     event = data.get("event")
+
     if event == "envelope-completed":
         envelope_id = data.get("data", {}).get("envelopeId")
         print(f"📂 [WEBHOOK] Envelope {envelope_id} is FULLY SIGNED!")
 
-        # 2. Extract the signed PDF
         documents = data.get("data", {}).get("envelopeSummary", {}).get("documents", [])
 
         if documents:
             signed_pdf_b64 = documents[0].get("PDFBytes")
             pdf_bytes = base64.b64decode(signed_pdf_b64)
 
-            # Save under media directory cleanly using Django settings
-            file_name = f"signed_re21_{envelope_id}.pdf"
-            relative_storage_path = os.path.join('signed_contracts', file_name)
-            absolute_file_path = os.path.join(settings.MEDIA_ROOT, relative_storage_path)
+            # 🚀 1. DEFINE THE S3 STORAGE PATH
+            s3_filename = f"signed_contracts/signed_re21_{envelope_id}.pdf"
 
-            os.makedirs(os.path.dirname(absolute_file_path), exist_ok=True)
-            with open(absolute_file_path, "wb") as f:
-                f.write(pdf_bytes)
+            # 🚀 2. SAVE DIRECTLY TO S3 BUCKET (using ContentFile so Django handles the binary stream)
+            from django.core.files.base import ContentFile
+            from django.core.files.storage import default_storage
 
-            print(f"💾 [WEBHOOK] Successfully saved signed contract to {absolute_file_path}")
+            saved_path = default_storage.save(s3_filename, ContentFile(pdf_bytes))
+            print(f"💾 [WEBHOOK] Successfully uploaded signed contract to S3 at: {saved_path}")
 
-            # 🚀 CONNECTING THE DOTS: Database Sync & Push Notification
             try:
                 deal = Deal.objects.get(docusign_envelope_id=envelope_id)
                 deal.status = 'fully_executed'
+
+                # 🚀 3. SAVE THE S3 PATH TO THE DATABASE
+                deal.signed_pdf_url = saved_path
                 deal.save()
 
-                # 🚀 DYNAMIC BROADCAST
-                # Instead of 'my-channel', scope it to the specific transaction row ID
+                # 🚀 4. BROADCAST VIA PUSHER
                 channel_name = f"deal_{deal.id}"
-
                 pusher_client.trigger(
                     channel_name,
-                    're-21_signed',  # This matches the event the UI listens for
+                    're-21_signed',
                     {
                         'envelope_id': envelope_id,
-                        'status': 'fully_executed'
+                        'status': 'fully_executed',
+                        'signed_pdf_url': saved_path
                     }
                 )
                 print(f"📡 [PUSHER SUCCESS] Broadcasted signature event to {channel_name}")
+
             except Deal.DoesNotExist:
                 print(f"⚠️ [WEBHOOK WARNING] No matching Deal found in database for envelope: {envelope_id}")
 

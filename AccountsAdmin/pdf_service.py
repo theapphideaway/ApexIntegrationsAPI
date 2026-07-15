@@ -74,7 +74,7 @@ class PDFGenerationService:
                 if field_name in field_map:
                     value_to_insert = str(field_map[field_name])
 
-                   
+
                     # Check if this value is an AutoPlace tag (e.g., \s1\, \i2\, \d1\)
                     if value_to_insert.startswith("\\") and value_to_insert.endswith("\\"):
                         # 1. Grab the exact bottom-left coordinates of your Acrobat field
