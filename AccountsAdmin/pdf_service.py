@@ -1,11 +1,12 @@
 import re
 import textwrap
 
-import fitz  # PyMuPDF
+
 import os
 from datetime import datetime
 from num2words import num2words
 from django.conf import settings
+import pymupdf
 
 
 class DocumentType:
@@ -43,9 +44,10 @@ class PDFGenerationService:
 
         return os.path.join(settings.BASE_DIR, 'static', 'pdfs', file_name)
 
+
     def generate_pdf(self, form_data: dict) -> bytes:
-        # Load the blank template we determined in __init__
-        doc = fitz.open(self.template_path)
+        # Load the blank template
+        doc = pymupdf.open(self.template_path)
 
         # 1. ROUTE TO THE CORRECT MAPPING FUNCTION
         if self.doc_type == DocumentType.RE_21:
@@ -65,22 +67,39 @@ class PDFGenerationService:
         else:
             raise ValueError(f"No mapping function defined for {self.doc_type}")
 
-        # 2. POPULATE THE PDF (Your existing logic)
+        # 2. POPULATE THE PDF
         for page in doc:
             for annot in page.widgets():
                 field_name = getattr(annot, "field_name", "")
                 if field_name in field_map:
                     value_to_insert = str(field_map[field_name])
 
+                   
+                    # Check if this value is an AutoPlace tag (e.g., \s1\, \i2\, \d1\)
+                    if value_to_insert.startswith("\\") and value_to_insert.endswith("\\"):
+                        # 1. Grab the exact bottom-left coordinates of your Acrobat field
+                        bottom_left_point = annot.rect.bl
+
+                        # 2. Stamp the anchor string as permanent, invisible white text
+                        page.insert_text(bottom_left_point, value_to_insert, fontsize=6, color=(1, 1, 1))
+
+                        # 3. Destroy the interactive widget so DocuSign's scanner can read it
+                        page.delete_widget(annot)
+
+                        # Skip the rest of the loop for this field!
+                        continue
+
+                    # --- STANDARD FORM FILLING ---
+
                     # If it's a true Checkbox/Radio button
-                    if annot.field_type == fitz.PDF_WIDGET_TYPE_BUTTON:
+                    if annot.field_type == pymupdf.PDF_WIDGET_TYPE_BUTTON:
                         if value_to_insert.lower() in ["true", "x", "yes", "on"]:
                             annot.field_value = "Yes"
                         else:
                             annot.field_value = "Off"
 
                     # If it's a Text Field
-                    elif annot.field_type == fitz.PDF_WIDGET_TYPE_TEXT:
+                    elif annot.field_type == pymupdf.PDF_WIDGET_TYPE_TEXT:
                         annot.field_value = value_to_insert
                         if value_to_insert == "X":
                             annot.text_quadding = 1
