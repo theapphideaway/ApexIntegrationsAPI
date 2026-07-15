@@ -505,8 +505,7 @@ def docusign_webhook(request):
             print(f"📊 [TRACE 8] Querying Postgres for Deal with envelope_id: '{envelope_id}'")
             try:
                 deal = Deal.objects.get(docusign_envelope_id=envelope_id)
-                print(f"📊 [TRACE 9] Match found! Deal ID: {deal.id}. Address: {deal.propertyAddress}")
-
+                print(f"📊 [TRACE 9] Match found! Deal ID: {deal.id}. Address: {deal.property_address}")
                 deal.status = 'fully_executed'
                 deal.signed_pdf_url = saved_path
                 deal.save()
