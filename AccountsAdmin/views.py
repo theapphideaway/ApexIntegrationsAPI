@@ -1,6 +1,7 @@
 import base64
 import logging
 import os
+import traceback
 import urllib
 import uuid
 import pusher
@@ -451,43 +452,77 @@ class DocumentCreateSignatureLinkEndpoint(APIView):
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def docusign_webhook(request):
-    data = request.data
-    event = data.get("event")
+    print("\n================ 📡 WEBHOOK HIT ================")
 
-    if event == "envelope-completed":
-        envelope_id = data.get("data", {}).get("envelopeId")
-        print(f"📂 [WEBHOOK] Envelope {envelope_id} is FULLY SIGNED!")
+    try:
+        data = request.data
+        event = data.get("event")
+        print(f"📊 [TRACE 1] Received Webhook Event: '{event}'")
 
-        documents = data.get("data", {}).get("envelopeSummary", {}).get("documents", [])
+        if event == "envelope-completed":
+            envelope_id = data.get("data", {}).get("envelopeId")
+            print(f"📂 [TRACE 2] Envelope {envelope_id} is FULLY SIGNED!")
 
-        if documents:
+            documents = data.get("data", {}).get("envelopeSummary", {}).get("documents", [])
+            print(f"📊 [TRACE 3] Found {len(documents)} document(s) in payload.")
+
+            if not documents:
+                print("⚠️ [TRACE 3a] No documents array found in DocuSign payload!")
+                return Response({"status": "error", "message": "No documents provided"}, status=400)
+
+            # Extract PDF Bytes
             signed_pdf_b64 = documents[0].get("PDFBytes")
-            pdf_bytes = base64.b64decode(signed_pdf_b64)
 
-            # 🚀 1. DEFINE THE S3 STORAGE NAME
+            # 💡 THE HIDDEN CRASH TRAP:
+            # If "Include Document PDFs" is not checked in DocuSign Connect, signed_pdf_b64 will be None!
+            if signed_pdf_b64 is None:
+                print("🚨 [CRASH CAUGHT] PDFBytes is None! DocuSign Connect is not sending the file bytes.")
+                print("👉 Fix: In DocuSign Admin -> Connect, make sure 'Include Document PDFs' is CHECKED.")
+                return Response({"status": "error", "message": "Missing PDFBytes"}, status=400)
+
+            print(f"📊 [TRACE 4] Successfully extracted Base64 string (Length: {len(signed_pdf_b64)})")
+
+            # Decode Base64
+            try:
+                pdf_bytes = base64.b64decode(signed_pdf_b64)
+                print(f"📊 [TRACE 5] Decoded base64 to binary bytes (Size: {len(pdf_bytes)} bytes)")
+            except Exception as b64_err:
+                print(f"🚨 [CRASH CAUGHT] Base64 decoding failed: {str(b64_err)}")
+                raise b64_err
+
+            # S3 File Upload
             s3_filename = f"signed_contracts/signed_re21_{envelope_id}.pdf"
+            print(f"📊 [TRACE 6] Attempting S3 storage save to path: '{s3_filename}'")
 
-            # 🚀 2. UPLOAD THE FULLY SIGNED BYTES STRAIGHT TO S3
-            from django.core.files.base import ContentFile
-            from django.core.files.storage import default_storage
+            try:
+                saved_path = default_storage.save(s3_filename, ContentFile(pdf_bytes))
+                print(f"💾 [TRACE 7] S3 Upload successful! File saved at: '{saved_path}'")
+            except Exception as s3_err:
+                print("🚨 [CRASH CAUGHT] AWS S3 Upload failed! Check your AWS credentials or bucket permissions.")
+                raise s3_err
 
-            saved_path = default_storage.save(s3_filename, ContentFile(pdf_bytes))
-            print(f"💾 [WEBHOOK] Successfully uploaded signed contract to S3 at: {saved_path}")
-
-            # 🚀 3. UPDATE POSTGRES & BROADCAST REAL-TIME NOTIFICATION
+            # Postgres Database Lookup
+            print(f"📊 [TRACE 8] Querying Postgres for Deal with envelope_id: '{envelope_id}'")
             try:
                 deal = Deal.objects.get(docusign_envelope_id=envelope_id)
-                deal.status = 'fully_executed'
+                print(f"📊 [TRACE 9] Match found! Deal ID: {deal.id}. Address: {deal.propertyAddress}")
 
-                # Write S3 path to Postgres so iOS fetch can locate it
+                deal.status = 'fully_executed'
                 deal.signed_pdf_url = saved_path
                 deal.save()
-                print(f"✅ [DATABASE] Deal {deal.id} updated with S3 URL: {saved_path}")
+                print("✅ [TRACE 10] Postgres database update successful!")
 
-                # dynamic broadcast channel mapped to Postgres ID
-                channel_name = f"deal_{deal.id}"
+            except Deal.DoesNotExist:
+                print(f"⚠️ [TRACE 9-WARN] No matching Deal row in database has docusign_envelope_id='{envelope_id}'")
+                print(
+                    "💡 Pro Tip: If you sent this via the DocuSign web dashboard instead of the iOS app, no DB row will match!")
+                return Response({"status": "received_no_db_match"}, status=200)
 
-                # Broadcast real-time update matching iOS expected event "re-21_signed"
+            # Pusher Live Sync
+            channel_name = f"deal_{deal.id}"
+            print(f"📊 [TRACE 11] Attempting Pusher broadcast to channel '{channel_name}'...")
+
+            try:
                 pusher_client.trigger(
                     channel_name,
                     're-21_signed',
@@ -497,12 +532,25 @@ def docusign_webhook(request):
                         'signed_pdf_url': saved_path
                     }
                 )
-                print(f"📡 [PUSHER SUCCESS] Broadcasted signature event to channel: {channel_name}")
+                print("📡 [TRACE 12] Pusher notification successfully broadcasted!")
+            except Exception as push_err:
+                print("🚨 [CRASH CAUGHT] Pusher broadcast failed! Check your keys or connection limits.")
+                raise push_err
 
-            except Deal.DoesNotExist:
-                print(f"⚠️ [WEBHOOK WARNING] No matching Deal found in database for envelope: {envelope_id}")
+        else:
+            print(f"ℹ️ [INFO] Ignoring non-completed event type: '{event}'")
 
-    return Response({"status": "received"}, status=200)
+        print("================ 📡 WEBHOOK SUCCESS ================ \n")
+        return Response({"status": "received"}, status=200)
+
+    except Exception as e:
+        # 🚨 THE ULTIMATE SAFETY NET: Print exactly what and where the code crashed!
+        print("\n❌❌❌❌ [WEBHOOK CRITICAL RUNTIME CRASH] ❌❌❌❌")
+        print(f"Error Message: {str(e)}")
+        print("---------------- Traceback Details ----------------")
+        traceback.print_exc()  # Prints the exact line of code that failed
+        print("---------------------------------------------------\n")
+        return Response({"status": "error", "message": str(e)}, status=500)
 
 
 class RE21ContractStatusEndpoint(APIView):
