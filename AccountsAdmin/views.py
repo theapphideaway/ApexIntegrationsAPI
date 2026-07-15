@@ -445,6 +445,8 @@ class DocumentCreateSignatureLinkEndpoint(APIView):
             return Response({"error": str(e)}, status=500)
 
 
+# views.py
+
 @csrf_exempt
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -462,26 +464,30 @@ def docusign_webhook(request):
             signed_pdf_b64 = documents[0].get("PDFBytes")
             pdf_bytes = base64.b64decode(signed_pdf_b64)
 
-            # 🚀 1. DEFINE THE S3 STORAGE PATH
+            # 🚀 1. DEFINE THE S3 STORAGE NAME
             s3_filename = f"signed_contracts/signed_re21_{envelope_id}.pdf"
 
-            # 🚀 2. SAVE DIRECTLY TO S3 BUCKET (using ContentFile so Django handles the binary stream)
+            # 🚀 2. UPLOAD THE FULLY SIGNED BYTES STRAIGHT TO S3
             from django.core.files.base import ContentFile
             from django.core.files.storage import default_storage
 
             saved_path = default_storage.save(s3_filename, ContentFile(pdf_bytes))
             print(f"💾 [WEBHOOK] Successfully uploaded signed contract to S3 at: {saved_path}")
 
+            # 🚀 3. UPDATE POSTGRES & BROADCAST REAL-TIME NOTIFICATION
             try:
                 deal = Deal.objects.get(docusign_envelope_id=envelope_id)
                 deal.status = 'fully_executed'
 
-                # 🚀 3. SAVE THE S3 PATH TO THE DATABASE
+                # Write S3 path to Postgres so iOS fetch can locate it
                 deal.signed_pdf_url = saved_path
                 deal.save()
+                print(f"✅ [DATABASE] Deal {deal.id} updated with S3 URL: {saved_path}")
 
-                # 🚀 4. BROADCAST VIA PUSHER
+                # dynamic broadcast channel mapped to Postgres ID
                 channel_name = f"deal_{deal.id}"
+
+                # Broadcast real-time update matching iOS expected event "re-21_signed"
                 pusher_client.trigger(
                     channel_name,
                     're-21_signed',
@@ -491,7 +497,7 @@ def docusign_webhook(request):
                         'signed_pdf_url': saved_path
                     }
                 )
-                print(f"📡 [PUSHER SUCCESS] Broadcasted signature event to {channel_name}")
+                print(f"📡 [PUSHER SUCCESS] Broadcasted signature event to channel: {channel_name}")
 
             except Deal.DoesNotExist:
                 print(f"⚠️ [WEBHOOK WARNING] No matching Deal found in database for envelope: {envelope_id}")
