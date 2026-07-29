@@ -347,7 +347,6 @@ class DocumentPreviewEndpoint(APIView):
             return Response({"error": f"Failed to generate PDF: {str(e)}"}, status=500)
 
 
-
 class OnboardingBundlePreviewEndpoint(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -375,20 +374,11 @@ class OnboardingBundlePreviewEndpoint(APIView):
         re21_data = extract_form_data(["re21", "re_21"])
 
         # If re21 wasn't nested under a key, check if payload ITSELF is the RE21 dictionary
-        if re21_data is None and ("propertyAddress" in payload or "property_address" in payload):
+        if agency_data is None and re14_data is None and re21_data is None:
+            print("💡 [BUNDLE PREVIEW] Flat payload detected! Generating Agency, RE-14, and RE-21 from flat data.")
+            agency_data = payload
+            re14_data = payload
             re21_data = payload
-
-        # 3. Fallback shared context from RE21
-        if re21_data:
-            shared_buyer = re21_data.get("buyerName") or re21_data.get("buyer_name", "")
-            shared_address = re21_data.get("propertyAddress") or re21_data.get("property_address", "")
-
-            if agency_data is not None:
-                agency_data.setdefault("buyerName", shared_buyer)
-                agency_data.setdefault("propertyAddress", shared_address)
-            if re14_data is not None:
-                re14_data.setdefault("buyerName", shared_buyer)
-                re14_data.setdefault("propertyAddress", shared_address)
 
         # 4. Build document list based on populated data
         documents_to_generate = []
