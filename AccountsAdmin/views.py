@@ -347,64 +347,91 @@ class DocumentPreviewEndpoint(APIView):
             return Response({"error": f"Failed to generate PDF: {str(e)}"}, status=500)
 
 
+
 class OnboardingBundlePreviewEndpoint(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
-        payload = request.data
+        payload = request.data or {}
 
-        # 🚀 1. DEBUG LOG: Print incoming keys to verify Swift payload structure
+        # 🚀 1. DEBUG LOG: Print incoming keys to see exact structure from Swift
         print("\n=== 📦 BUNDLE PREVIEW PAYLOAD DEBUG ===")
-        print(f"Payload Keys Received: {list(payload.keys())}")
-        re21_raw = payload.get("re21", {})
-        print(f"RE21 Field Count: {len(re21_raw.keys()) if isinstance(re21_raw, dict) else 'Not a Dict'}")
+        print(f"Raw Request Data: {payload}")
+        print(f"Payload Keys Received: {list(payload.keys()) if isinstance(payload, dict) else type(payload)}")
         print("=======================================\n")
 
-        # 2. Extract form dictionaries
-        re21_data = payload.get("re21", {})
-        agency_data = payload.get("agencyDisclosure", {})
-        re14_data = payload.get("re14", {})
+        if not isinstance(payload, dict):
+            return Response({"error": "Invalid payload format. Expected a JSON dictionary."}, status=400)
 
-        # 3. Fallback shared context if agency or re14 are sparse
-        shared_buyer = re21_data.get("buyerName") or re21_data.get("buyer_name", "")
-        shared_address = re21_data.get("propertyAddress") or re21_data.get("property_address", "")
+        # 🚀 2. HELPER: Look for keys in both camelCase and snake_case
+        def extract_form_data(keys):
+            for k in keys:
+                if k in payload and isinstance(payload[k], dict):
+                    return payload[k]
+            return None
 
-        agency_data.setdefault("buyerName", shared_buyer)
-        agency_data.setdefault("propertyAddress", shared_address)
+        agency_data = extract_form_data(["agencyDisclosure", "agency_disclosure", "agency"])
+        re14_data = extract_form_data(["re14", "re_14"])
+        re21_data = extract_form_data(["re21", "re_21"])
 
-        re14_data.setdefault("buyerName", shared_buyer)
-        re14_data.setdefault("propertyAddress", shared_address)
+        # If re21 wasn't nested under a key, check if payload ITSELF is the RE21 dictionary
+        if re21_data is None and ("propertyAddress" in payload or "property_address" in payload):
+            re21_data = payload
+
+        # 3. Fallback shared context from RE21
+        if re21_data:
+            shared_buyer = re21_data.get("buyerName") or re21_data.get("buyer_name", "")
+            shared_address = re21_data.get("propertyAddress") or re21_data.get("property_address", "")
+
+            if agency_data is not None:
+                agency_data.setdefault("buyerName", shared_buyer)
+                agency_data.setdefault("propertyAddress", shared_address)
+            if re14_data is not None:
+                re14_data.setdefault("buyerName", shared_buyer)
+                re14_data.setdefault("propertyAddress", shared_address)
+
+        # 4. Build document list based on populated data
+        documents_to_generate = []
+        if agency_data is not None:
+            documents_to_generate.append((DocumentType.AGENCY_DISCLOSURE, agency_data))
+        if re14_data is not None:
+            documents_to_generate.append((DocumentType.RE_14, re14_data))
+        if re21_data is not None:
+            documents_to_generate.append((DocumentType.RE_21, re21_data))
+
+        # 🚀 5. FALLBACK: If no keys matched, default to generating all 3 forms with whatever data exists
+        if not documents_to_generate:
+            print("⚠️ No matching document keys found in payload. Defaulting to all 3 forms.")
+            documents_to_generate = [
+                (DocumentType.AGENCY_DISCLOSURE, agency_data or {}),
+                (DocumentType.RE_14, re14_data or {}),
+                (DocumentType.RE_21, re21_data or payload),
+            ]
 
         try:
             merged_pdf = pymupdf.open()
-
-            # Build document generation list
-            documents_to_generate = []
-            if "agencyDisclosure" in payload or not payload: # Default fallback
-                documents_to_generate.append((DocumentType.AGENCY_DISCLOSURE, agency_data))
-            if "re14" in payload or not payload:
-                documents_to_generate.append((DocumentType.RE_14, re14_data))
-            if "re21" in payload or not payload:
-                documents_to_generate.append((DocumentType.RE_21, re21_data))
 
             for doc_type, data in documents_to_generate:
                 pdf_service = PDFGenerationService(doc_type=doc_type)
                 pdf_bytes = pdf_service.generate_pdf(data)
 
+                if not pdf_bytes:
+                    continue
+
                 temp_doc = pymupdf.open("pdf", pdf_bytes)
 
-                # 🚀 4. FLATTEN WIDGETS BEFORE MERGING TO PREVENT ACROFORM COLLISIONS
+                # Flatten widgets before inserting to prevent AcroForm collisions
                 for page in temp_doc:
-                    # If using PyMuPDF 1.23+, bake() converts widgets to static page text
                     if hasattr(page, "bake"):
                         page.bake()
-                    else:
-                        # Fallback for older versions: flatten annotations
-                        for widget in page.widgets():
-                            widget.update()
 
                 merged_pdf.insert_pdf(temp_doc)
                 temp_doc.close()
+
+            # 🚀 6. SAFEGUARD: Ensure pages exist before calling tobytes()
+            if merged_pdf.page_count == 0:
+                merged_pdf.close()
+                return Response({"error": "No pages were generated for the bundle preview."}, status=400)
 
             final_bytes = merged_pdf.tobytes(garbage=4, deflate=True)
             merged_pdf.close()
