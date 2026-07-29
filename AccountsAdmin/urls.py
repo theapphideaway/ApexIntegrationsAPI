@@ -1,7 +1,6 @@
 from django.urls import path
 from . import views
-from .views import FUBAuthCallbackView, FUBSendDocumentView, DocumentPreviewEndpoint, \
-    DocumentCreateSignatureLinkEndpoint, DistributeExecutedPacketEndpoint
+from .views import FUBAuthCallbackView, FUBSendDocumentView, DocumentPreviewEndpoint, DistributeExecutedPacketEndpoint, SendOnboardingBundleEndpoint
 
 urlpatterns = [
     path('organizations/', views.organization_list, name='organization-list'),
@@ -15,6 +14,6 @@ urlpatterns = [
     path('fub/callback/', FUBAuthCallbackView.as_view(), name='fub_auth_callback'),
     path('fub/send/', FUBSendDocumentView.as_view(), name='fub_send_document'),
     path('documents/preview/<str:doc_type>/', DocumentPreviewEndpoint.as_view(), name='document_preview'),
-    path('documents/send/<str:doc_type>/', DocumentCreateSignatureLinkEndpoint.as_view(), name='document_send'),
+    path('documents/send/<str:doc_type>/', SendOnboardingBundleEndpoint.as_view(), name='document_send'),
     path('api/documents/distribute/', DistributeExecutedPacketEndpoint.as_view(), name='distribute_packet'),
 ]
