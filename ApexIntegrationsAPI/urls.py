@@ -26,7 +26,7 @@ from AccountsAdmin.views import (
     DealDeleteEndpoint,
     landing_page,
     DocumentPreviewEndpoint,
-    DocumentCreateSignatureLinkEndpoint,
+    SendOnboardingBundleEndpoint,
     OnboardingBundlePreviewEndpoint, DealDetailEndpoint
 )
 
@@ -37,7 +37,7 @@ urlpatterns = [
 
     path('api/documents/preview-bundle/', OnboardingBundlePreviewEndpoint.as_view(), name='preview_bundle'),
     path('api/documents/preview/<str:doc_type>/', DocumentPreviewEndpoint.as_view(), name='document_preview'),
-    path('api/documents/send/<str:doc_type>/', DocumentCreateSignatureLinkEndpoint.as_view(), name='document_send'),
+    path('api/documents/send/<str:doc_type>/', SendOnboardingBundleEndpoint.as_view(), name='document_send'),
 
     path('api/contracts/webhook/', docusign_webhook, name='docusign_webhook'),
     path('api/contracts/status/<str:envelope_id>/', RE21ContractStatusEndpoint.as_view(), name='contract_status'),

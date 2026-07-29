@@ -386,67 +386,56 @@ class OnboardingBundlePreviewEndpoint(APIView):
             return Response({"error": f"Failed to generate bundle: {str(e)}"}, status=500)
 
 
-class DocumentCreateSignatureLinkEndpoint(APIView):
+# 🟢 NEW BUNDLE SIGNATURE ENDPOINT
+class SendOnboardingBundleEndpoint(APIView):
     permission_classes = [IsAuthenticated]
 
-    def post(self, request, doc_type, *args, **kwargs):
-        form_data = request.data
+    def post(self, request, *args, **kwargs):
+        payload = request.data
+
+        # 1. Extract buyers list from request
+        raw_buyers = payload.get("buyers", [])
+        if not raw_buyers:
+            return Response({"error": "At least one buyer is required."}, status=400)
+
+        # 2. Extract form payloads for each document
+        bundled_data = {
+            DocumentType.AGENCY_DISCLOSURE: payload.get("agencyDisclosure", {}),
+            DocumentType.RE_14: payload.get("re14", {}),
+            DocumentType.RE_21: payload.get("re21", {}),
+        }
 
         try:
-            # 1. Generate the specific PDF
-            pdf_service = PDFGenerationService(doc_type=doc_type)
-            pdf_bytes = pdf_service.generate_pdf(form_data)
+            # 3. Call your multi-document bundle method
+            ds_service = DocuSignService()
+            result = ds_service.send_bundle_envelope(
+                bundled_data=bundled_data,
+                buyers=raw_buyers
+            )
 
-            # 2. Extract Data for the Database
-            raw_buyer_name = form_data.get("buyerName", "Test Buyer")
-            buyer_names = [n.strip() for n in raw_buyer_name.split(" and ")]
-            primary_email = form_data.get("buyerEmail", "ianschoenrock@gmail.com")
-            property_address = form_data.get("propertyAddress", "Unknown Address")
+            envelope_id = result.get("envelope_id")
+            re21_data = payload.get("re21", {})
+            property_address = re21_data.get("propertyAddress", "Unknown Address")
+            buyer_names = ", ".join([b.get("name", "") for b in raw_buyers])
 
-            # 3. Upload Draft to AWS S3 with dynamic naming
-            file_id = uuid.uuid4().hex[:8]
-            s3_filename = f"drafts/{doc_type}_{file_id}.pdf"
-            saved_path = default_storage.save(s3_filename, ContentFile(pdf_bytes))
-
-            # 4. Create or Update the Deal in Postgres
-            # Note: For an RE-21, you create a Deal. For an RE-10 or Addendum,
-            # you would ideally attach it to an *existing* deal. For now, we will
-            # just create a new record to keep your current logic flowing.
+            # 4. Save/Update Deal in Postgres
             deal = Deal.objects.create(
                 agent=request.user,
+                docusign_envelope_id=envelope_id,
                 property_address=property_address,
-                buyer_names=raw_buyer_name,
-                status='out_for_signature',
-                draft_pdf_url=saved_path
+                buyer_names=buyer_names,
+                status='out_for_signature'
             )
-
-            # 5. Send to DocuSign
-            buyers_list = [{"name": name, "email": primary_email} for name in buyer_names]
-            ds_service = DocuSignService()
-
-            result = ds_service.send_envelope(
-                pdf_bytes=pdf_bytes,
-                buyers=buyers_list
-            )
-
-            # 6. Update the Deal with the Envelope ID
-            deal.docusign_envelope_id = result.get("envelope_id")
-            deal.save()
 
             return Response({
                 "status": "sent",
-                "envelope_id": deal.docusign_envelope_id,
-                "deal_id": deal.id,
-                "draft_url": saved_path
+                "envelope_id": envelope_id,
+                "deal_id": deal.id
             }, status=200)
 
-        except ValueError as e:
-            return Response({"error": str(e)}, status=400)
         except Exception as e:
-            return Response({"error": str(e)}, status=500)
+            return Response({"error": f"Failed to send bundle: {str(e)}"}, status=500)
 
-
-# views.py
 
 @csrf_exempt
 @api_view(['POST'])
