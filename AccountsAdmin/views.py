@@ -919,3 +919,92 @@ class DistributeExecutedPacketEndpoint(APIView):
         except Exception as e:
             logger.error(f"❌ Failed to distribute executed packet: {str(e)}")
             return Response({"error": f"Distribution failed: {str(e)}"}, status=500)
+
+
+class MLSListingProxyView(APIView):
+    """
+    Broker back-office MLS lookup.
+
+        GET /api/mls/listing/<mls_number>/
+
+    Queries the company's MLS (RESO Web API) for a single listing and returns the
+    RESO envelope { "value": [record] } straight through to the iOS app, which
+    decodes it into an MLSListing.
+
+    The company holds ONE MLS credential (every app user is a licensed broker or
+    agent = standard back-office use), so the credential lives here on the server
+    and is NEVER shipped in the app.
+
+    Required environment variables (put in .env on the server — never commit):
+        MLS_API_BASE_URL      e.g. https://api.<your-mls>.com/reso/odata
+        MLS_API_TOKEN         server bearer token issued by your MLS / data vendor
+    Optional:
+        MLS_LISTING_ID_FIELD  RESO field to filter on (default "ListingId")
+
+    If your MLS uses OAuth2 client-credentials instead of a static token, mint the
+    bearer token here before the request (cache it) rather than reading a fixed one.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, mls_number):
+        base_url = (getattr(settings, 'MLS_API_BASE_URL', '') or '').strip()
+        token = (getattr(settings, 'MLS_API_TOKEN', '') or '').strip()
+        id_field = (getattr(settings, 'MLS_LISTING_ID_FIELD', 'ListingId') or 'ListingId').strip()
+
+        if not base_url or not token:
+            return Response(
+                {"detail": "MLS integration is not configured on the server."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        raw_number = (mls_number or '').strip()
+        if not raw_number:
+            return Response({"detail": "Missing MLS number."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        # Escape single quotes for the OData $filter string (OData doubles them).
+        safe_number = raw_number.replace("'", "''")
+
+        endpoint = f"{base_url.rstrip('/')}/Property"
+        params = {
+            "$filter": f"{id_field} eq '{safe_number}'",
+            "$top": 1,
+        }
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/json",
+        }
+
+        try:
+            resp = requests.get(endpoint, params=params, headers=headers, timeout=15)
+        except requests.exceptions.Timeout:
+            return Response({"detail": "The MLS request timed out."},
+                            status=status.HTTP_504_GATEWAY_TIMEOUT)
+        except requests.exceptions.RequestException as exc:
+            logging.error("MLS request failed: %s", exc)
+            return Response({"detail": "Could not reach the MLS."},
+                            status=status.HTTP_502_BAD_GATEWAY)
+
+        if resp.status_code in (401, 403):
+            logging.error("MLS auth rejected (%s): %s", resp.status_code, resp.text[:500])
+            return Response({"detail": "The MLS rejected the server credential."},
+                            status=status.HTTP_502_BAD_GATEWAY)
+
+        if resp.status_code != 200:
+            logging.error("MLS returned %s: %s", resp.status_code, resp.text[:500])
+            return Response({"detail": f"MLS returned status {resp.status_code}."},
+                            status=status.HTTP_502_BAD_GATEWAY)
+
+        try:
+            payload = resp.json()
+        except ValueError:
+            return Response({"detail": "MLS returned an unreadable response."},
+                            status=status.HTTP_502_BAD_GATEWAY)
+
+        records = payload.get("value", []) if isinstance(payload, dict) else []
+        if not records:
+            return Response({"detail": f"No listing found for MLS #{raw_number}."},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        # Pass the RESO envelope straight through (iOS decodes { "value": [record] }).
+        return Response({"value": records[:1]}, status=status.HTTP_200_OK)

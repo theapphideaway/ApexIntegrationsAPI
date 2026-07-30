@@ -27,7 +27,8 @@ from AccountsAdmin.views import (
     landing_page,
     DocumentPreviewEndpoint,
     SendOnboardingBundleEndpoint,
-    OnboardingBundlePreviewEndpoint, DealDetailEndpoint
+    OnboardingBundlePreviewEndpoint, DealDetailEndpoint,
+    MLSListingProxyView
 )
 
 urlpatterns = [
@@ -44,6 +45,8 @@ urlpatterns = [
     path('api/deals/', AgentDealsListCreateView.as_view(), name='agent-deals-list-create'),
     path('api/deals/<int:pk>/', DealDetailEndpoint.as_view(), name='deal-detail'),
     path('api/deals/<int:pk>/', DealDeleteEndpoint.as_view(), name='delete_deal'),
+
+    path('api/mls/listing/<str:mls_number>/', MLSListingProxyView.as_view(), name='mls_listing'),
 
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
 ]

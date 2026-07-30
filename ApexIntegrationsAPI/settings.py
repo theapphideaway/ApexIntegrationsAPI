@@ -168,6 +168,13 @@ AWS_S3_ENDPOINT_URL = 'https://s3.us-east-2.amazonaws.com'
 FUB_CLIENT_ID = os.environ.get('FUB_CLIENT_ID', 'fallback_id_if_missing')
 FUB_CLIENT_SECRET = os.environ.get('FUB_CLIENT_SECRET', 'fallback_secret_if_missing')
 
+# --- MLS (RESO Web API) — broker back-office lookup ---
+# ONE company-level credential (every app user is a licensed agent). Set these in
+# .env on the server; never commit them. If unset, the MLS endpoint returns 503.
+MLS_API_BASE_URL = os.environ.get('MLS_API_BASE_URL', '')        # e.g. https://api.<your-mls>.com/reso/odata
+MLS_API_TOKEN = os.environ.get('MLS_API_TOKEN', '')             # server bearer token from your MLS/vendor
+MLS_LISTING_ID_FIELD = os.environ.get('MLS_LISTING_ID_FIELD', 'ListingId')  # RESO filter field
+
 # Security: Don't allow files to be overwritten if they have the same name
 AWS_S3_FILE_OVERWRITE = False
 AWS_DEFAULT_ACL = None
