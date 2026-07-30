@@ -141,9 +141,12 @@ class PDFGenerationService:
             except ValueError:
                 return date_str  # Return raw if already formatted
 
-        # --- HARDCODED AGENT DEFAULTS ---
-        map["SELLING BROKERAGE"] = "Keller Williams Realty"
-        map["Selling Agent"] = "Ian Schoenrock"
+        # --- AGENT / BROKERAGE ---
+        # Prefer values sent with the form; otherwise fall back to the brokerage-
+        # level server defaults (this app serves one brokerage team). No hardcoded
+        # competitor/agent names in generated contracts.
+        map["SELLING BROKERAGE"] = data.get("sellingBrokerage") or getattr(settings, "DEFAULT_SELLING_BROKERAGE", "")
+        map["Selling Agent"] = data.get("sellingAgent") or getattr(settings, "DEFAULT_SELLING_AGENT", "")
 
         responsible_broker = data.get("responsibleBroker")
         if responsible_broker:
@@ -322,7 +325,7 @@ class PDFGenerationService:
         # --- SECTION 40 CLOSING ---
         if data.get("closingAgency"):
             map["COMPANY for this transaction shall be"] = data.get("closingAgency")
-            map["located at"] = "123 Title Way, Idaho Falls, ID"
+            map["located at"] = data.get("titleCompanyLocation") or ""
         map["term escrow holder shall be"] = "N/A"
 
         # --- SECTION 42 POSSESSION ---
@@ -540,7 +543,10 @@ class PDFGenerationService:
             map["n_a_transfer_fees"] = "X"
 
         # --- SECTION 20: SELLING BROKERAGE COMPENSATION ---
-        is_testing_brokerage_comp = True
+        # Was forcing a fake 3% / $5,000 test commission into every contract.
+        # Off by default so generated contracts don't show bogus numbers; buyer
+        # compensation is handled on the RE-14 buyer representation agreement.
+        is_testing_brokerage_comp = False
         if is_testing_brokerage_comp:
             map["seller_payer_selling_brokerage"] = "X"
             map["SELLER agrees to pay Selling Brokerage compensation of an amount equal to"] = "3"

@@ -175,6 +175,14 @@ MLS_API_BASE_URL = os.environ.get('MLS_API_BASE_URL', '')        # e.g. https://
 MLS_API_TOKEN = os.environ.get('MLS_API_TOKEN', '')             # server bearer token from your MLS/vendor
 MLS_LISTING_ID_FIELD = os.environ.get('MLS_LISTING_ID_FIELD', 'ListingId')  # RESO filter field
 
+# --- Brokerage identity stamped onto generated RE-21 contracts ---
+# Source of truth is the DATABASE: the authenticated agent (CustomUser) and
+# their Organization (see apply_agent_identity in views.py). These env values
+# are only a FALLBACK for unauthenticated previews / before orgs are populated.
+# Blank until configured (never a hardcoded competitor name).
+DEFAULT_SELLING_BROKERAGE = os.environ.get('DEFAULT_SELLING_BROKERAGE', '')
+DEFAULT_SELLING_AGENT = os.environ.get('DEFAULT_SELLING_AGENT', '')
+
 # Security: Don't allow files to be overwritten if they have the same name
 AWS_S3_FILE_OVERWRITE = False
 AWS_DEFAULT_ACL = None

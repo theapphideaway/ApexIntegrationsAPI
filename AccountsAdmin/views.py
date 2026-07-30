@@ -323,10 +323,28 @@ def delete_user(request, user_id):
         )
 
 
+def apply_agent_identity(data, user):
+    """Stamp the authenticated agent + their brokerage onto RE-21 form data from
+    the database (CustomUser + its Organization), unless the form already
+    specified them. The DB is the source of truth; settings.DEFAULT_SELLING_*
+    remain a fallback inside the PDF mapper for unauthenticated previews."""
+    if not isinstance(data, dict) or not getattr(user, "is_authenticated", False):
+        return data
+    full_name = f"{user.first_name} {user.last_name}".strip()
+    if full_name and not data.get("sellingAgent"):
+        data["sellingAgent"] = full_name
+    org = getattr(user, "organization", None)
+    if org and getattr(org, "name", None) and not data.get("sellingBrokerage"):
+        data["sellingBrokerage"] = org.name
+    return data
+
+
 class DocumentPreviewEndpoint(APIView):
     def post(self, request, doc_type, *args, **kwargs):
         # 1. Grab the JSON payload sent from iOS
         form_data = request.data
+        # Stamp the agent/brokerage from the DB when a valid token is present.
+        apply_agent_identity(form_data, request.user)
 
         try:
             # 2. Initialize the service with the specific document type
@@ -402,6 +420,8 @@ class OnboardingBundlePreviewEndpoint(APIView):
             merged_pdf = pymupdf.open()
 
             for doc_type, data in documents_to_generate:
+                if doc_type == DocumentType.RE_21:
+                    apply_agent_identity(data, request.user)
                 pdf_service = PDFGenerationService(doc_type=doc_type)
                 pdf_bytes = pdf_service.generate_pdf(data)
 
@@ -453,6 +473,9 @@ class SendOnboardingBundleEndpoint(APIView):
             DocumentType.RE_14: payload.get("re14", {}),
             DocumentType.RE_21: payload.get("re21", {}),
         }
+
+        # Stamp the agent/brokerage onto the RE-21 from the authenticated user.
+        apply_agent_identity(bundled_data[DocumentType.RE_21], request.user)
 
         try:
             # 3. Call your multi-document bundle method
