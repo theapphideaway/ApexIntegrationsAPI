@@ -25,7 +25,7 @@ load_dotenv(os.path.join(BASE_DIR, '.env'))
 # See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-8#136d=4u3(@lq2s)jmz*1o@$rfeb+k^d^4%2sde6_0bm$g&p)'
+SECRET_KEY = os.environ['DJANGO_SECRET_KEY']
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = False
@@ -153,9 +153,19 @@ EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
 EMAIL_USE_SSL = False
-EMAIL_HOST_USER = 'ianschoenrock@gmail.com' # Your Gmail address
-EMAIL_HOST_PASSWORD = 'mxwilizxkpppwlcx' # The code from Google
-DEFAULT_FROM_EMAIL = 'Real Estate App <your-email@gmail.com>'
+EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
+DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'Real Estate App <no-reply@apexintegrations.ai>')
+
+# Pusher (real-time)
+PUSHER_APP_ID = os.environ.get('PUSHER_APP_ID', '')
+PUSHER_KEY = os.environ.get('PUSHER_KEY', '')
+PUSHER_SECRET = os.environ.get('PUSHER_SECRET', '')
+PUSHER_CLUSTER = os.environ.get('PUSHER_CLUSTER', 'us2')
+
+# Dev/App-Store-review OTP bypass. OFF by default; set OTP_DEV_BYPASS=True only
+# on non-production (e.g. the demo server). Gates the 000000 login backdoor.
+OTP_DEV_BYPASS = os.environ.get('OTP_DEV_BYPASS', 'False').lower() == 'true'
 
 # AWS S3 Configuration
 AWS_ACCESS_KEY_ID = os.environ.get('AWS_ACCESS_KEY_ID')

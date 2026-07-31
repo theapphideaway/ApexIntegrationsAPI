@@ -1,2 +1,6 @@
 .env
 db.sqlite3
+private_key.pem
+*.pem
+__pycache__/
+*.pyc

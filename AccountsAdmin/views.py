@@ -3,7 +3,6 @@ import logging
 import os
 import traceback
 import urllib
-import uuid
 import pusher
 
 import pymupdf
@@ -16,11 +15,10 @@ from django.shortcuts import render
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from docusign_esign import EnvelopesApi, ApiClient
-from rest_framework.generics import ListCreateAPIView, DestroyAPIView, RetrieveAPIView
+from rest_framework.generics import ListCreateAPIView, RetrieveDestroyAPIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.views import APIView
 import requests
-from django.shortcuts import redirect
 
 from .docusign_service import DocuSignService
 from .pdf_service import PDFGenerationService, DocumentType
@@ -35,13 +33,12 @@ from .models import Organization, CustomUser, OTPCode, Deal
 from .serializers import OrganizationSerializer, CustomUserSerializer, DealSerializer
 from django.core.mail import send_mail, EmailMessage
 from django.conf import settings
-from django.http import HttpResponse
 
 pusher_client = pusher.Pusher(
-    app_id='2176134',
-    key='8fb0496bbb7f0c5b2c4e',
-    secret='fcb993754b1059c86bd3',
-    cluster='us2',
+    app_id=settings.PUSHER_APP_ID,
+    key=settings.PUSHER_KEY,
+    secret=settings.PUSHER_SECRET,
+    cluster=settings.PUSHER_CLUSTER,
     ssl=True
 )
 
@@ -101,7 +98,7 @@ def request_otp(request):
     # ---------------------------------------------------------
     # 0. THE DEV & APP STORE REVIEW BYPASS
     # ---------------------------------------------------------
-    if email.lower() == 'ianschoenrock@gmail.com':
+    if settings.OTP_DEV_BYPASS and email.lower() == 'ianschoenrock@gmail.com':
         print("---> BYPASS TRIGGERED: Skipping email generation for admin test account.")
         # Return a fake success message so the iOS app proceeds to the verification screen
         return Response(
@@ -229,7 +226,7 @@ def verify_otp(request):
     # ---------------------------------------------------------
     # 0. THE DEV & APP STORE REVIEW BYPASS
     # ---------------------------------------------------------
-    if email.lower() == 'ianschoenrock@gmail.com' and code == '000000':
+    if settings.OTP_DEV_BYPASS and email.lower() == 'ianschoenrock@gmail.com' and code == '000000':
         print("---> BYPASS TRIGGERED for admin test account.")
         try:
             user = CustomUser.objects.get(email__iexact=email)
@@ -340,6 +337,8 @@ def apply_agent_identity(data, user):
 
 
 class DocumentPreviewEndpoint(APIView):
+    permission_classes = [IsAuthenticated]
+
     def post(self, request, doc_type, *args, **kwargs):
         # 1. Grab the JSON payload sent from iOS
         form_data = request.data
@@ -674,7 +673,7 @@ class AgentDealsListCreateView(ListCreateAPIView):
         print(f"Request User Email: {user.email}")
         print(f"Request User ID: {user.id}")
 
-        if user.email.lower() == 'ianschoenrock@gmail.com':
+        if settings.OTP_DEV_BYPASS and user.email.lower() == 'ianschoenrock@gmail.com':
             deals = Deal.objects.filter(
                 Q(agent=user) | Q(agent__isnull=True)
             ).order_by('-updated_at')
@@ -696,44 +695,26 @@ class AgentDealsListCreateView(ListCreateAPIView):
         serializer.save(agent=self.request.user)
 
 
-class DealDetailEndpoint(RetrieveAPIView):
+class DealDetailEndpoint(RetrieveDestroyAPIView):
     """
-    GET /api/deals/<id>/
-    Fetches a single deal's full state from Postgres.
+    GET    /api/deals/<id>/  — fetch a single deal's full state.
+    DELETE /api/deals/<id>/  — delete the deal and its S3 files.
     """
     serializer_class = DealSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        # SECURITY: Ensure agents can only pull details of their own deals
-        return Deal.objects.filter(agent=self.request.user)
-
-
-class DealDeleteEndpoint(DestroyAPIView):
-    # Ensure only logged-in users can trigger a deletion
-    permission_classes = [IsAuthenticated]
-
-    def get_queryset(self):
-        # SECURITY: This ensures an agent can only delete their OWN deals.
-        # If they guess the ID of another agent's deal, Django will return a 404.
+        # SECURITY: agents can only access/delete their OWN deals.
         return Deal.objects.filter(agent=self.request.user)
 
     def perform_destroy(self, instance):
-        # 1. Delete the Draft PDF from AWS S3
-        if instance.draft_pdf_url:
-            try:
-                default_storage.delete(instance.draft_pdf_url)
-            except Exception as e:
-                print(f"Failed to delete draft from S3: {e}")
-
-        # 2. Delete the Signed PDF from AWS S3 (if it exists)
-        if instance.signed_pdf_url:
-            try:
-                default_storage.delete(instance.signed_pdf_url)
-            except Exception as e:
-                print(f"Failed to delete signed doc from S3: {e}")
-
-        # 3. Finally, delete the record from Postgres
+        # Clean up the draft + signed PDFs from S3 before deleting the record.
+        for key in (instance.draft_pdf_url, instance.signed_pdf_url):
+            if key:
+                try:
+                    default_storage.delete(key)
+                except Exception as e:
+                    print(f"Failed to delete {key} from S3: {e}")
         instance.delete()
 
 

@@ -137,7 +137,7 @@ class Deal(models.Model):
         ('draft', 'Draft'),
         ('out_for_signature', 'Waiting on buyers signatures'),
         ('signed_by_buyers', 'Offer ready to send'),
-        ('executed', 'Fully Executed'),
+        ('fully_executed', 'Fully Executed'),
         ('cancelled', 'Cancelled')
     ]
     status = models.CharField(max_length=50, choices=STATUS_CHOICES, default='draft')
