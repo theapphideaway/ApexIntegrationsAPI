@@ -973,10 +973,13 @@ class MLSListingProxyView(APIView):
         params = {
             "$filter": f"{id_field} eq '{safe_number}'",
             "$top": 1,
+            # rets.io (and many RESO hosts) authenticate via query param.
+            "access_token": token,
         }
         headers = {
-            "Authorization": f"Bearer {token}",
             "Accept": "application/json",
+            # Also send as Bearer for hosts that expect the header instead.
+            "Authorization": f"Bearer {token}",
         }
 
         try:
@@ -991,12 +994,15 @@ class MLSListingProxyView(APIView):
 
         if resp.status_code in (401, 403):
             logging.error("MLS auth rejected (%s): %s", resp.status_code, resp.text[:500])
-            return Response({"detail": "The MLS rejected the server credential."},
+            return Response({"detail": "The MLS rejected the server credential.",
+                             "upstream_status": resp.status_code,
+                             "upstream_body": resp.text[:400]},
                             status=status.HTTP_502_BAD_GATEWAY)
 
         if resp.status_code != 200:
             logging.error("MLS returned %s: %s", resp.status_code, resp.text[:500])
-            return Response({"detail": f"MLS returned status {resp.status_code}."},
+            return Response({"detail": f"MLS returned status {resp.status_code}.",
+                             "upstream_body": resp.text[:400]},
                             status=status.HTTP_502_BAD_GATEWAY)
 
         try:
