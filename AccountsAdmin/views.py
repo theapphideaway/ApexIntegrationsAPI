@@ -925,96 +925,113 @@ class DistributeExecutedPacketEndpoint(APIView):
             return Response({"error": f"Distribution failed: {str(e)}"}, status=500)
 
 
+def mls_reso_query(filter_expr, top=1):
+    """
+    Run a RESO Property query against the company's MLS (RESO Web API) and return
+    (records, error_response). On success error_response is None; on failure
+    records is None and error_response is a ready DRF Response.
+
+    The company holds ONE MLS credential (every app user is a licensed agent =
+    standard back-office use); it lives here on the server, never in the app.
+    Env: MLS_API_BASE_URL, MLS_API_TOKEN (rets.io authenticates via ?access_token).
+    """
+    base_url = (getattr(settings, 'MLS_API_BASE_URL', '') or '').strip()
+    token = (getattr(settings, 'MLS_API_TOKEN', '') or '').strip()
+    if not base_url or not token:
+        return None, Response(
+            {"detail": "MLS integration is not configured on the server."},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+
+    endpoint = f"{base_url.rstrip('/')}/Property"
+    params = {
+        "$filter": filter_expr,
+        "$top": top,
+        "access_token": token,  # rets.io (and many RESO hosts) authenticate via query param
+    }
+    headers = {
+        "Accept": "application/json",
+        "Authorization": f"Bearer {token}",  # also send Bearer for hosts that expect the header
+    }
+
+    try:
+        resp = requests.get(endpoint, params=params, headers=headers, timeout=15)
+    except requests.exceptions.Timeout:
+        return None, Response({"detail": "The MLS request timed out."},
+                              status=status.HTTP_504_GATEWAY_TIMEOUT)
+    except requests.exceptions.RequestException as exc:
+        logging.error("MLS request failed: %s", exc)
+        return None, Response({"detail": "Could not reach the MLS."},
+                              status=status.HTTP_502_BAD_GATEWAY)
+
+    if resp.status_code in (401, 403):
+        logging.error("MLS auth rejected (%s): %s", resp.status_code, resp.text[:500])
+        return None, Response({"detail": "The MLS rejected the server credential.",
+                               "upstream_status": resp.status_code,
+                               "upstream_body": resp.text[:400]},
+                              status=status.HTTP_502_BAD_GATEWAY)
+
+    if resp.status_code != 200:
+        logging.error("MLS returned %s: %s", resp.status_code, resp.text[:500])
+        return None, Response({"detail": f"MLS returned status {resp.status_code}.",
+                               "upstream_body": resp.text[:400]},
+                              status=status.HTTP_502_BAD_GATEWAY)
+
+    try:
+        payload = resp.json()
+    except ValueError:
+        return None, Response({"detail": "MLS returned an unreadable response."},
+                              status=status.HTTP_502_BAD_GATEWAY)
+
+    records = payload.get("value", []) if isinstance(payload, dict) else []
+    return records, None
+
+
 class MLSListingProxyView(APIView):
     """
-    Broker back-office MLS lookup.
-
+    Broker back-office MLS lookup by MLS number.
         GET /api/mls/listing/<mls_number>/
-
-    Queries the company's MLS (RESO Web API) for a single listing and returns the
-    RESO envelope { "value": [record] } straight through to the iOS app, which
-    decodes it into an MLSListing.
-
-    The company holds ONE MLS credential (every app user is a licensed broker or
-    agent = standard back-office use), so the credential lives here on the server
-    and is NEVER shipped in the app.
-
-    Required environment variables (put in .env on the server — never commit):
-        MLS_API_BASE_URL      e.g. https://api.<your-mls>.com/reso/odata
-        MLS_API_TOKEN         server bearer token issued by your MLS / data vendor
-    Optional:
-        MLS_LISTING_ID_FIELD  RESO field to filter on (default "ListingId")
-
-    If your MLS uses OAuth2 client-credentials instead of a static token, mint the
-    bearer token here before the request (cache it) rather than reading a fixed one.
+    Returns the RESO envelope { "value": [record] } for the iOS app to decode.
     """
     permission_classes = [IsAuthenticated]
 
     def get(self, request, mls_number):
-        base_url = (getattr(settings, 'MLS_API_BASE_URL', '') or '').strip()
-        token = (getattr(settings, 'MLS_API_TOKEN', '') or '').strip()
-        id_field = (getattr(settings, 'MLS_LISTING_ID_FIELD', 'ListingId') or 'ListingId').strip()
-
-        if not base_url or not token:
-            return Response(
-                {"detail": "MLS integration is not configured on the server."},
-                status=status.HTTP_503_SERVICE_UNAVAILABLE,
-            )
-
         raw_number = (mls_number or '').strip()
         if not raw_number:
             return Response({"detail": "Missing MLS number."},
                             status=status.HTTP_400_BAD_REQUEST)
 
-        # Escape single quotes for the OData $filter string (OData doubles them).
-        safe_number = raw_number.replace("'", "''")
+        id_field = (getattr(settings, 'MLS_LISTING_ID_FIELD', 'ListingId') or 'ListingId').strip()
+        safe_number = raw_number.replace("'", "''")  # OData escapes single quotes by doubling
 
-        endpoint = f"{base_url.rstrip('/')}/Property"
-        params = {
-            "$filter": f"{id_field} eq '{safe_number}'",
-            "$top": 1,
-            # rets.io (and many RESO hosts) authenticate via query param.
-            "access_token": token,
-        }
-        headers = {
-            "Accept": "application/json",
-            # Also send as Bearer for hosts that expect the header instead.
-            "Authorization": f"Bearer {token}",
-        }
-
-        try:
-            resp = requests.get(endpoint, params=params, headers=headers, timeout=15)
-        except requests.exceptions.Timeout:
-            return Response({"detail": "The MLS request timed out."},
-                            status=status.HTTP_504_GATEWAY_TIMEOUT)
-        except requests.exceptions.RequestException as exc:
-            logging.error("MLS request failed: %s", exc)
-            return Response({"detail": "Could not reach the MLS."},
-                            status=status.HTTP_502_BAD_GATEWAY)
-
-        if resp.status_code in (401, 403):
-            logging.error("MLS auth rejected (%s): %s", resp.status_code, resp.text[:500])
-            return Response({"detail": "The MLS rejected the server credential.",
-                             "upstream_status": resp.status_code,
-                             "upstream_body": resp.text[:400]},
-                            status=status.HTTP_502_BAD_GATEWAY)
-
-        if resp.status_code != 200:
-            logging.error("MLS returned %s: %s", resp.status_code, resp.text[:500])
-            return Response({"detail": f"MLS returned status {resp.status_code}.",
-                             "upstream_body": resp.text[:400]},
-                            status=status.HTTP_502_BAD_GATEWAY)
-
-        try:
-            payload = resp.json()
-        except ValueError:
-            return Response({"detail": "MLS returned an unreadable response."},
-                            status=status.HTTP_502_BAD_GATEWAY)
-
-        records = payload.get("value", []) if isinstance(payload, dict) else []
+        records, error = mls_reso_query(f"{id_field} eq '{safe_number}'", top=1)
+        if error is not None:
+            return error
         if not records:
             return Response({"detail": f"No listing found for MLS #{raw_number}."},
                             status=status.HTTP_404_NOT_FOUND)
-
-        # Pass the RESO envelope straight through (iOS decodes { "value": [record] }).
         return Response({"value": records[:1]}, status=status.HTTP_200_OK)
+
+
+class MLSAddressSearchView(APIView):
+    """
+    Broker back-office MLS search by street address.
+        GET /api/mls/search/?address=<address>
+    Case-insensitive substring match on UnparsedAddress. Returns the RESO envelope
+    { "value": [records] } (possibly empty — the app shows "not listed for sale").
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        address = (request.GET.get('address', '') or '').strip()
+        if not address:
+            return Response({"detail": "Missing address."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        safe = address.replace("'", "''")
+        filter_expr = f"contains(tolower(UnparsedAddress),tolower('{safe}'))"
+        records, error = mls_reso_query(filter_expr, top=5)
+        if error is not None:
+            return error
+        # Empty is a valid "no active listing at that address" result, not an error.
+        return Response({"value": records}, status=status.HTTP_200_OK)
