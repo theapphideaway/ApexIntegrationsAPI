@@ -1029,8 +1029,14 @@ class MLSAddressSearchView(APIView):
                             status=status.HTTP_400_BAD_REQUEST)
 
         safe = address.replace("'", "''")
-        filter_expr = f"contains(tolower(UnparsedAddress),tolower('{safe}'))"
-        records, error = mls_reso_query(filter_expr, top=5)
+        # Match the street address OR the city, so "Idaho Falls" returns every
+        # listing in that city (UnparsedAddress usually embeds the city, but the
+        # City field is the authoritative match for city-wide searches).
+        filter_expr = (
+            f"contains(tolower(UnparsedAddress),tolower('{safe}')) "
+            f"or contains(tolower(City),tolower('{safe}'))"
+        )
+        records, error = mls_reso_query(filter_expr, top=50)
         if error is not None:
             return error
         # Empty is a valid "no active listing at that address" result, not an error.
