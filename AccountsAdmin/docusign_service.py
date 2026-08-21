@@ -1,7 +1,7 @@
 import base64
 import os
 from docusign_esign import ApiClient, EnvelopesApi, EnvelopeDefinition, Document, Signer, SignHere, Tabs, Recipients, \
-    InitialHere
+    InitialHere, DateSigned
 
 from AccountsAdmin.pdf_service import PDFGenerationService
 from ApexIntegrationsAPI import settings
@@ -113,9 +113,19 @@ class DocuSignService:
                 anchor_x_offset="0"
             )
 
+            # Auto-stamps the signing date wherever the PDF carries \d<n>\
+            # (signature-row Date columns and page-bottom "Date:" lines).
+            date_signed = DateSigned(
+                anchor_string=f"\\d{signer_id}\\",
+                anchor_units="pixels",
+                anchor_y_offset="0",
+                anchor_x_offset="0"
+            )
+
             signer.tabs = Tabs(
                 sign_here_tabs=[sign_here],
-                initial_here_tabs=[initial_here]
+                initial_here_tabs=[initial_here],
+                date_signed_tabs=[date_signed]
             )
             docusign_signers.append(signer)
 

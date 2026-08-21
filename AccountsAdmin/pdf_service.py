@@ -634,9 +634,22 @@ class PDFGenerationService:
         # Buyer 1 Mapping
         map["BUYER Print Name"] = buyer_name
         map["DocuSignHere_1"] = "\\s1\\"
+        map["buyer_1_date"] = "\\d1\\"   # date auto-stamps when buyer 1 signs
 
         # DocuSign Initial Tags (Offsets)
         initial_offsets = [1, 5, 9, 13, 17, 21, 25, 29, 33]
+
+        # Page-bottom date lines next to the initials strips ("Date ____").
+        # Buyer column then seller column per page; 'Date_16' is skipped because
+        # the template reuses that name for the offer-expiration field on page 9.
+        buyer_bottom_dates = ["Buyer_Date", "Date_2", "Date_4", "Date_6", "Date_8",
+                              "Date_10", "Date_12", "Date_14", "Date_17"]
+        seller_bottom_dates = ["Seller_Date", "Date_3", "Date_5", "Date_7", "Date_9",
+                               "Date_11", "Date_13", "Date_15", "Date_18"]
+        for f in buyer_bottom_dates:
+            map[f] = "\\d1\\"
+        for f in seller_bottom_dates:
+            map[f] = "\\d3\\"           # inert until sellers are recipients
 
         for num in initial_offsets:
             # Buyer 1 Initial
@@ -654,14 +667,17 @@ class PDFGenerationService:
         if has_second_buyer:
             map["BUYER Print Name_2"] = buyer_name_two
             map["DocuSignHere_2"] = "\\s2\\"
+            map["buyer_2_date"] = "\\d2\\"
             print(f"DEBUG: Mapping Buyer 2 ({buyer_name_two}) to DocuSignHere_2")
         else:
             map["BUYER Print Name_2"] = ""
-            map["DocuSignHere_2"] = "\\s2\\"
             print("DEBUG: Only one buyer detected.")
-        # Seller Signatures (Note: check your Acrobat case-sensitivity for 'DocuSign' vs 'Docusign')
-        map["DocuSignHere3"] = "\\s3\\"
-        map["DocuSignHere4"] = "\\s4\\"
+        # Seller Signatures — inert until sellers are DocuSign recipients.
+        # (The template fields are 'DocuSignHere_3'/'_4' WITH the underscore.)
+        map["DocuSignHere_3"] = "\\s3\\"
+        map["DocuSignHere_4"] = "\\s4\\"
+        map["seller_1_date"] = "\\d3\\"
+        map["seller_2_date"] = "\\d4\\"
 
         return map
 
@@ -996,26 +1012,45 @@ class PDFGenerationService:
             if buyer_2:
                 map['buyer_two_single_agency'] = "\\i2\\"
 
-        # --- BOTTOM OF PAGE INITIALS ---
-        # DocuSign will automatically drop initials wherever it finds these tags
-        map['undefined_2'] = "\\i1\\"  # Page 1 bottom
-        map['undefined_3'] = "\\i1\\"  # Page 2 bottom
-        map['undefined_4'] = "\\i1\\"  # Page 3 bottom
+        # --- BOTTOM OF PAGE INITIALS + DATE (PAGES 1-3) ---
+        # CAUTION: like the header, the bottom-strip field names don't match
+        # their position. Each strip reads "BUYER'S Initials (__)(__) Date:__";
+        # verified by rendering the AcroForm:
+        #   page 1: paren1 = <the long 'This form is printed…' field>,
+        #           paren2 = 'Date',        date line = 'undefined_2'
+        #   page 2: paren1 = 'BUYERS Initials',   paren2 = 'undefined_3', date = 'Date_2'
+        #   page 3: paren1 = 'BUYERS Initials_2', paren2 = 'undefined_4', date = 'Date_3'
+        p1_paren1 = ('This form is printed and distributed by the Idaho Association of '
+                     'REAL TORS Inc This form has been designed and is provided for use '
+                     'by the real estate professionals who are members of the')
+        map[p1_paren1] = "\\i1\\"
+        map['BUYERS Initials'] = "\\i1\\"
+        map['BUYERS Initials_2'] = "\\i1\\"
+        map['undefined_2'] = "\\d1\\"   # date lines auto-stamp when buyer 1 signs
+        map['Date_2'] = "\\d1\\"
+        map['Date_3'] = "\\d1\\"
+        if buyer_2:
+            map['Date'] = "\\i2\\"          # page 1, second paren
+            map['undefined_3'] = "\\i2\\"   # page 2, second paren
+            map['undefined_4'] = "\\i2\\"   # page 3, second paren
 
         # --- SIGNATURES (PAGE 4) ---
-        # Since standard signature fields can block PyMuPDF, we drop the invisible
-        # \s1\ anchors into the nearby text fields (like Date and Phone).
-
-        map['Date_4'] = "\\s1\\"  # Buyer 1 Signature Anchor
+        # Sign anchors go in the fields ON the signature lines; the Date columns
+        # ('Date_4/5/6') get DocuSign date-signed anchors so they auto-fill.
+        map['208 BUYER Signature'] = "\\s1\\"
+        map['Date_4'] = "\\d1\\"
         map['211 Phone'] = data.get("buyerPhone", "")
         map['Email'] = data.get("buyerEmail", "")
 
         if buyer_2:
-            map['Date_6'] = "\\s2\\"  # Buyer 2 Signature Anchor
+            map['214 BUYER Signature'] = "\\s2\\"
+            map['Date_6'] = "\\d2\\"
             map['217 Phone'] = data.get("buyerTwoPhone", "")
             map['Email_3'] = data.get("buyerTwoEmail", "")
 
-        map['Date_5'] = "\\s3\\"  # Agent Signature Anchor
+        # Agent line — inert until the agent is added as a DocuSign recipient.
+        map['Agent or Broker on behalf of Brokerage Signature'] = "\\s3\\"
+        map['Date_5'] = "\\d3\\"
         map['Agent Phone'] = data.get("agentPhone", "")
         map['Email_4'] = data.get("agentEmail", "")
 
@@ -1026,18 +1061,20 @@ class PDFGenerationService:
         map = {}
 
         # --- BROKERAGE INFO (PAGE 2) ---
-        # ⚠️ NOTE: Replace these keys with the exact field names from your discovery script!
-        map['BROKERAGE'] = data.get("brokerageName", "Top Notch Real Estate")
-        map['DESIGNATED BROKER'] = data.get("designatedBroker", "")
+        map['BROKERAGE'] = data.get("brokerageName") or data.get("sellingBrokerage") \
+            or getattr(settings, "DEFAULT_SELLING_BROKERAGE", "")
+        map['DESIGNATED BROKER'] = data.get("designatedBroker") or data.get("sellingAgent") \
+            or getattr(settings, "DEFAULT_SELLING_AGENT", "")
         map['PHONE NUMBER'] = data.get("brokeragePhone", "")
 
-        # --- DOCUSIGN TAGS (PAGE 2) ---
-        # We will use DocuSign anchor tags for the signatures.
-        # ⚠️ NOTE: Replace 'Signature_1' and 'Signature_2' with the actual PDF field names.
-        map['Signature_1'] = "\\s1\\"
+        # --- DOCUSIGN TAGS (PAGE 2 ACKNOWLEDGMENT) ---
+        # Template field names verified: SIGNATURE/DATE = line 1, SIGNATURE2/DATE2 = line 2.
+        map['SIGNATURE'] = "\\s1\\"
+        map['DATE'] = "\\d1\\"
 
-        if data.get("hasSecondBuyer", False):
-            map['Signature_2'] = "\\s2\\"
+        if data.get("hasSecondBuyer") or (data.get("buyerNameTwo") or "").strip():
+            map['SIGNATURE2'] = "\\s2\\"
+            map['DATE2'] = "\\d2\\"
 
         return map
 
