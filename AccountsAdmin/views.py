@@ -419,8 +419,7 @@ class OnboardingBundlePreviewEndpoint(APIView):
             merged_pdf = pymupdf.open()
 
             for doc_type, data in documents_to_generate:
-                if doc_type == DocumentType.RE_21:
-                    apply_agent_identity(data, request.user)
+                apply_agent_identity(data, request.user)
                 pdf_service = PDFGenerationService(doc_type=doc_type)
                 pdf_bytes = pdf_service.generate_pdf(data)
 
@@ -473,8 +472,10 @@ class SendOnboardingBundleEndpoint(APIView):
             DocumentType.RE_21: payload.get("re21", {}),
         }
 
-        # Stamp the agent/brokerage onto the RE-21 from the authenticated user.
-        apply_agent_identity(bundled_data[DocumentType.RE_21], request.user)
+        # Stamp the agent/brokerage from the authenticated user onto every doc
+        # (the RE-14 header needs them too, not just the RE-21).
+        for doc_payload in bundled_data.values():
+            apply_agent_identity(doc_payload, request.user)
 
         try:
             # 3. Call your multi-document bundle method

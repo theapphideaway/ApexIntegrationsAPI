@@ -914,13 +914,25 @@ class PDFGenerationService:
         both_buyers = f"{buyer_1} and {buyer_2}" if buyer_2 else buyer_1
 
         # --- HEADER INFO ---
-        map['buyer_name'] = both_buyers
-        map['3 1 BUYER'] = both_buyers
-        map['BUYERS NAMES'] = both_buyers  # Page 2 header
-        map['BUYERS NAMES_2'] = both_buyers  # Page 3 header
-        map['Broker of'] = both_buyers
+        # CAUTION: this template's field names do NOT match their position on
+        # the page (verified by rendering the AcroForm):
+        #   '3 1 BUYER'          -> the DATE line
+        #   'Broker of'          -> the "1. BUYER" line
+        #   '6 as exclusive ...' -> the "retains ___" (broker/agent) line
+        #   'buyer_name'         -> the "Broker of ___" (brokerage) line
+        agent_name = data.get("sellingAgent") or data.get("agentName") \
+            or getattr(settings, "DEFAULT_SELLING_AGENT", "")
+        brokerage = data.get("sellingBrokerage") or data.get("brokerageName") \
+            or getattr(settings, "DEFAULT_SELLING_BROKERAGE", "")
 
-        map['Acting as Agent for the Broker'] = data.get("agentName", "Ian Schoenrock")
+        map['3 1 BUYER'] = today_str          # DATE line
+        map['Broker of'] = both_buyers        # 1. BUYER line
+        map['6 as exclusive Buyer Broker hereafter referred to as Broker where the BUYER is represented by one Broker only for time herein'] = agent_name  # retains ___
+        map['buyer_name'] = brokerage         # Broker of ___
+        map['BUYERS NAMES'] = both_buyers     # Page 2 header
+        map['BUYERS NAMES_2'] = both_buyers   # Page 3 header
+
+        map['Acting as Agent for the Broker'] = agent_name  # AGENT line
 
         # --- PROPERTY CRITERIA ---
         prop_type = data.get("propertyType", "residential")  # residential, income, commercial, land, build, other
