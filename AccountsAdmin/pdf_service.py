@@ -160,7 +160,10 @@ class PDFGenerationService:
         seller_name = data.get("sellerName", "")
         seller_name_two = data.get("sellerNameTwo", "")
 
-        map["1 BUYER"] = buyer_name + " and " + buyer_name_two
+        # Join with "and" only when a second buyer actually exists.
+        buyer_name = buyer_name.strip()
+        buyer_name_two = buyer_name_two.strip()
+        map["1 BUYER"] = f"{buyer_name} and {buyer_name_two}" if buyer_name_two else buyer_name
         map["BUYER Print Name"] = buyer_name
         map["BUYER Print Name_2"] = buyer_name_two
         map["SELLER Print Name"] = seller_name
@@ -925,8 +928,8 @@ class PDFGenerationService:
 
         today_str = datetime.now().strftime("%m/%d/%Y")
 
-        buyer_1 = data.get("buyerName", "")
-        buyer_2 = data.get("buyerNameTwo", "")
+        buyer_1 = data.get("buyerName", "").strip()
+        buyer_2 = data.get("buyerNameTwo", "").strip()
         both_buyers = f"{buyer_1} and {buyer_2}" if buyer_2 else buyer_1
 
         # --- HEADER INFO ---
