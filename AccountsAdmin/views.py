@@ -723,6 +723,16 @@ class DealDetailEndpoint(RetrieveDestroyAPIView):
         return Deal.objects.filter(agent=self.request.user)
 
     def perform_destroy(self, instance):
+        # Void the in-flight DocuSign envelope so nobody can sign the
+        # outdated version after the deal is deleted/revised. Never let a
+        # DocuSign hiccup block the deletion itself.
+        if instance.docusign_envelope_id and instance.status in ('out_for_signature', 'signed_by_buyers'):
+            try:
+                DocuSignService().void_envelope(instance.docusign_envelope_id)
+                print(f"Voided envelope {instance.docusign_envelope_id} for deleted deal {instance.id}")
+            except Exception as e:
+                print(f"Failed to void envelope {instance.docusign_envelope_id}: {e}")
+
         # Clean up the draft + signed PDFs from S3 before deleting the record.
         for key in (instance.draft_pdf_url, instance.signed_pdf_url):
             if key:

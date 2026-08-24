@@ -1,7 +1,7 @@
 import base64
 import os
-from docusign_esign import ApiClient, EnvelopesApi, EnvelopeDefinition, Document, Signer, SignHere, Tabs, Recipients, \
-    InitialHere, DateSigned
+from docusign_esign import ApiClient, EnvelopesApi, EnvelopeDefinition, Envelope, Document, Signer, SignHere, Tabs, \
+    Recipients, InitialHere, DateSigned
 
 from AccountsAdmin.pdf_service import PDFGenerationService
 from ApexIntegrationsAPI import settings
@@ -59,6 +59,22 @@ class DocuSignService:
             pdf_bytes = f.read()
 
         return pdf_bytes
+
+    def void_envelope(self, envelope_id: str, reason: str = "Revised offer sent") -> None:
+        """Voids an in-flight envelope so recipients can no longer sign it.
+        Used when a deal is deleted/revised while out for signature."""
+        access_token = self._get_access_token()
+
+        api_client = ApiClient()
+        api_client.host = self.base_path
+        api_client.set_default_header("Authorization", f"Bearer {access_token}")
+
+        envelopes_api = EnvelopesApi(api_client)
+        envelopes_api.update(
+            account_id=self.account_id,
+            envelope_id=envelope_id,
+            envelope=Envelope(status="voided", voided_reason=reason)
+        )
 
     def send_bundle_envelope(self, bundled_data: dict, buyers: list) -> dict:
         """
