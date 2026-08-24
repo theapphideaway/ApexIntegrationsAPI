@@ -465,12 +465,23 @@ class SendOnboardingBundleEndpoint(APIView):
         if not raw_buyers:
             return Response({"error": "At least one buyer is required."}, status=400)
 
-        # 2. Extract form payloads for each document
-        bundled_data = {
-            DocumentType.AGENCY_DISCLOSURE: payload.get("agencyDisclosure", {}),
-            DocumentType.RE_14: payload.get("re14", {}),
-            DocumentType.RE_21: payload.get("re21", {}),
-        }
+        # 2. Extract form payloads — only the documents whose key is PRESENT are
+        # generated, so the app's form-selection pills control the packet.
+        bundled_data = {}
+        for doc_type, key in ((DocumentType.AGENCY_DISCLOSURE, "agencyDisclosure"),
+                              (DocumentType.RE_14, "re14"),
+                              (DocumentType.RE_21, "re21")):
+            if isinstance(payload.get(key), dict):
+                bundled_data[doc_type] = payload[key]
+
+        # Legacy flat payload (no keyed documents): full packet from the flat data,
+        # mirroring the preview endpoint's flat fallback.
+        if not bundled_data:
+            bundled_data = {
+                DocumentType.AGENCY_DISCLOSURE: payload,
+                DocumentType.RE_14: payload,
+                DocumentType.RE_21: payload,
+            }
 
         # Stamp the agent/brokerage from the authenticated user onto every doc
         # (the RE-14 header needs them too, not just the RE-21).
@@ -486,7 +497,10 @@ class SendOnboardingBundleEndpoint(APIView):
             )
 
             envelope_id = result.get("envelope_id")
-            re21_data = payload.get("re21", {})
+            # Every doc payload carries the same form data, so any included doc
+            # can supply the address if the RE-21 was deselected.
+            re21_data = bundled_data.get(DocumentType.RE_21) \
+                or next(iter(bundled_data.values()), {})
             property_address = re21_data.get("propertyAddress", "Unknown Address")
             buyer_names = ", ".join([b.get("name", "") for b in raw_buyers])
 
