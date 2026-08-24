@@ -545,25 +545,36 @@ def docusign_webhook(request):
                 print("⚠️ [TRACE 3a] No documents array found in DocuSign payload!")
                 return Response({"status": "error", "message": "No documents provided"}, status=400)
 
-            # Extract PDF Bytes
-            signed_pdf_b64 = documents[0].get("PDFBytes")
-
-            # 💡 THE HIDDEN CRASH TRAP:
-            # If "Include Document PDFs" is not checked in DocuSign Connect, signed_pdf_b64 will be None!
-            if signed_pdf_b64 is None:
-                print("🚨 [CRASH CAUGHT] PDFBytes is None! DocuSign Connect is not sending the file bytes.")
-                print("👉 Fix: In DocuSign Admin -> Connect, make sure 'Include Document PDFs' is CHECKED.")
-                return Response({"status": "error", "message": "Missing PDFBytes"}, status=400)
-
-            print(f"📊 [TRACE 4] Successfully extracted Base64 string (Length: {len(signed_pdf_b64)})")
-
-            # Decode Base64
+            # Merge EVERY signed document in the envelope (agency disclosure,
+            # RE-14, RE-21, …) into one PDF — taking only documents[0] dropped
+            # all but the first form from the stored packet. DocuSign's
+            # certificate-of-completion summary doc is skipped.
+            merged_pdf = pymupdf.open()
+            merged_count = 0
             try:
-                pdf_bytes = base64.b64decode(signed_pdf_b64)
-                print(f"📊 [TRACE 5] Decoded base64 to binary bytes (Size: {len(pdf_bytes)} bytes)")
-            except Exception as b64_err:
-                print(f"🚨 [CRASH CAUGHT] Base64 decoding failed: {str(b64_err)}")
-                raise b64_err
+                for doc_info in documents:
+                    if str(doc_info.get("documentId", "")).lower() == "certificate" \
+                            or str(doc_info.get("type", "")).lower() == "summary":
+                        continue
+                    doc_b64 = doc_info.get("PDFBytes")
+                    if not doc_b64:
+                        continue
+                    part = pymupdf.open("pdf", base64.b64decode(doc_b64))
+                    merged_pdf.insert_pdf(part)
+                    part.close()
+                    merged_count += 1
+
+                # 💡 THE HIDDEN CRASH TRAP:
+                # If "Include Document PDFs" is not checked in DocuSign Connect, PDFBytes is None!
+                if merged_count == 0:
+                    print("🚨 [CRASH CAUGHT] No PDFBytes on any document! DocuSign Connect is not sending file bytes.")
+                    print("👉 Fix: In DocuSign Admin -> Connect, make sure 'Include Document PDFs' is CHECKED.")
+                    return Response({"status": "error", "message": "Missing PDFBytes"}, status=400)
+
+                pdf_bytes = merged_pdf.tobytes(garbage=4, deflate=True)
+            finally:
+                merged_pdf.close()
+            print(f"📊 [TRACE 4-5] Merged {merged_count} signed document(s) into one PDF (Size: {len(pdf_bytes)} bytes)")
 
             # S3 File Upload
             s3_filename = f"signed_contracts/signed_re21_{envelope_id}.pdf"
