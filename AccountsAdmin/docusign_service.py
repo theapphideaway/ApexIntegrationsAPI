@@ -89,10 +89,12 @@ class DocuSignService:
 
         # 1. Generate and package all PDFs into the envelope
         docs_to_send = []
+        document_bytes = []  # (doc_type, pdf_bytes) — for the caller's draft copy
         # DocuSign requires document IDs to be unique sequential strings ("1", "2", "3")
         for idx, (doc_type, data) in enumerate(bundled_data.items(), start=1):
             service = PDFGenerationService(doc_type=doc_type)
             pdf_bytes = service.generate_pdf(data)
+            document_bytes.append((doc_type, pdf_bytes))
 
             doc = Document(
                 document_base64=base64.b64encode(pdf_bytes).decode('utf-8'),
@@ -162,6 +164,7 @@ class DocuSignService:
         # 4. Return the status and unique ID back to your view layer
         return {
             "status": "sent",
+            "document_bytes": document_bytes,
             "envelope_id": envelope_summary.envelope_id
         }
 

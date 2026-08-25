@@ -89,6 +89,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     date_joined = models.DateTimeField(default=timezone.now)
     last_login_ip = models.GenericIPAddressField(null=True, blank=True)  # Good for security audits
     fub_access_token = models.CharField(max_length=255, blank=True, null=True)
+    fub_refresh_token = models.CharField(max_length=255, blank=True, null=True)
 
     objects = CustomUserManager()
 
@@ -131,6 +132,9 @@ class Deal(models.Model):
     agent = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='deals')
     property_address = models.CharField(max_length=255)
     buyer_names = models.CharField(max_length=255)
+    # Primary buyer's email — lets the DocuSign webhook attach the executed
+    # packet to the right CRM contact without re-querying the envelope.
+    buyer_email = models.EmailField(blank=True, null=True)
 
     # State Management
     STATUS_CHOICES = [

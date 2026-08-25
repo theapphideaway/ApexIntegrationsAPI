@@ -21,6 +21,7 @@ from rest_framework.views import APIView
 import requests
 
 from .docusign_service import DocuSignService
+from . import fub_service
 from .pdf_service import PDFGenerationService, DocumentType
 # Create your views here.
 
@@ -503,14 +504,58 @@ class SendOnboardingBundleEndpoint(APIView):
                 or next(iter(bundled_data.values()), {})
             property_address = re21_data.get("propertyAddress", "Unknown Address")
             buyer_names = ", ".join([b.get("name", "") for b in raw_buyers])
+            primary_buyer = raw_buyers[0]
 
-            # 4. Save/Update Deal in Postgres
+            # 4. Store the unsigned packet on S3 so the deal has a draft copy
+            # (and the CRM note below has something to link to).
+            draft_path = None
+            try:
+                merged = pymupdf.open()
+                for _doc_type, pdf_bytes in result.get("document_bytes", []):
+                    part = pymupdf.open("pdf", pdf_bytes)
+                    merged.insert_pdf(part)
+                    part.close()
+                if merged.page_count:
+                    draft_path = default_storage.save(
+                        f"drafts/packet_{envelope_id}.pdf",
+                        ContentFile(merged.tobytes(garbage=4, deflate=True))
+                    )
+                merged.close()
+            except Exception as e:
+                print(f"Draft packet S3 save failed (non-fatal): {e}")
+
+            # 5. Save/Update Deal in Postgres
             deal = Deal.objects.create(
                 agent=request.user,
                 docusign_envelope_id=envelope_id,
                 property_address=property_address,
                 buyer_names=buyer_names,
+                buyer_email=primary_buyer.get("email") or None,
+                draft_pdf_url=draft_path,
                 status='out_for_signature'
+            )
+
+            # 6. CRM sync — the packet appears on the buyer's FUB timeline.
+            # Never blocks the send: sync_document swallows its own failures.
+            doc_list = ", ".join(
+                dt.upper().replace("_", "-") for dt, _ in result.get("document_bytes", [])
+            )
+            link_html = ""
+            if draft_path:
+                try:
+                    link_html = f'<p>📄 <a href="{default_storage.url(draft_path)}" target="_blank">View the packet</a></p>'
+                except Exception:
+                    pass
+            fub_service.sync_document(
+                request.user,
+                buyer_name=primary_buyer.get("name", buyer_names),
+                buyer_email=primary_buyer.get("email", ""),
+                subject=f"Offer packet sent for signature — {property_address}",
+                body_html=(
+                    f"<p><strong>Apex Integrations AI</strong>: offer packet sent to "
+                    f"{buyer_names} for signature.</p>"
+                    f"<p>Property: {property_address}<br>Documents: {doc_list}</p>{link_html}"
+                ),
             )
 
             return Response({
@@ -596,6 +641,27 @@ def docusign_webhook(request):
                 deal.signed_pdf_url = saved_path
                 deal.save()
                 print("✅ [TRACE 10] Postgres database update successful!")
+
+                # CRM sync — the fully executed packet lands on the buyer's
+                # FUB timeline. Non-fatal by design.
+                try:
+                    signed_link = default_storage.url(saved_path)
+                except Exception:
+                    signed_link = None
+                link_html = (
+                    f'<p>📄 <a href="{signed_link}" target="_blank">View the executed packet</a></p>'
+                    if signed_link else ""
+                )
+                fub_service.sync_document(
+                    deal.agent,
+                    buyer_name=deal.buyer_names,
+                    buyer_email=deal.buyer_email or "",
+                    subject=f"Contract fully executed — {deal.property_address}",
+                    body_html=(
+                        f"<p><strong>Apex Integrations AI</strong>: all parties have signed.</p>"
+                        f"<p>Property: {deal.property_address}<br>Buyer(s): {deal.buyer_names}</p>{link_html}"
+                    ),
+                )
 
             except Deal.DoesNotExist:
                 print(f"⚠️ [TRACE 9-WARN] No matching Deal row in database has docusign_envelope_id='{envelope_id}'")
@@ -757,6 +823,31 @@ class DealDetailEndpoint(RetrieveDestroyAPIView):
 User = get_user_model()
 
 
+class FUBConnectURLView(APIView):
+    """GET /api/auth/fub/connect-url/ — returns the FUB authorize URL with a
+    signed state bound to the requesting agent. The app opens it in Safari."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        return Response({"url": fub_service.make_connect_url(request.user)})
+
+
+class FUBStatusView(APIView):
+    """GET    /api/auth/fub/status/ — is this agent's FUB connected (server truth)?
+    DELETE /api/auth/fub/status/ — disconnect: clear the stored tokens."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        return Response({"connected": bool(request.user.fub_access_token)})
+
+    def delete(self, request):
+        user = request.user
+        user.fub_access_token = None
+        user.fub_refresh_token = None
+        user.save(update_fields=["fub_access_token", "fub_refresh_token"])
+        return Response({"connected": False})
+
+
 class FUBAuthCallbackView(APIView):
     permission_classes = []
 
@@ -766,67 +857,38 @@ class FUBAuthCallbackView(APIView):
         return response
 
     def get(self, request, *args, **kwargs):
-        import uuid
-        req_id = str(uuid.uuid4())[:6]
-        print(f"\n=== [DJANGO OAUTH {req_id}] CALLBACK HIT ===")
-
         try:
             code = request.GET.get('code')
-            state_user_id = request.GET.get('state')
+            state = request.GET.get('state')
 
-            if not code or not state_user_id:
+            if not code or not state:
                 return self.custom_redirect('apexapp://fub-callback?status=error&message=missing_params')
 
-            token_url = "https://app.followupboss.com/oauth/token"
+            # The signed state proves which agent started this flow — a raw
+            # user id here would let anyone bind their FUB account to another
+            # agent's Apex account.
+            from django.core import signing as dj_signing
+            try:
+                user_id = fub_service.user_id_from_state(state)
+            except dj_signing.BadSignature:
+                return self.custom_redirect('apexapp://fub-callback?status=error&message=bad_state')
 
-            # 👇 THE MISSING PARAMETER REVEALED
-            # Follow Up Boss uniquely requires the 'state' parameter to be
-            # echoed BACK in the POST payload. Almost no other API does this!
-            payload = {
-                "grant_type": "authorization_code",
-                "code": code.strip(),
-                "redirect_uri": "https://www.apexintegrations.ai/api/auth/fub/callback/",
-                "state": state_user_id.strip()  # <--- THIS IS THE FIX!
-            }
+            data = fub_service.exchange_code(code, state)
 
-            client_id = settings.FUB_CLIENT_ID.strip()
-            client_secret = settings.FUB_CLIENT_SECRET.strip()
+            user = User.objects.filter(id=user_id).first()
+            if not user:
+                return self.custom_redirect('apexapp://fub-callback?status=error&message=user_not_found')
 
-            print("Sending POST request to FUB...")
-
-            # The requests library natively handles the Base64 Auth header
-            response = requests.post(
-                token_url,
-                data=payload,
-                auth=(client_id, client_secret)
-            )
-
-            print(f"FUB Status Code: {response.status_code}")
-
-            if response.status_code == 200:
-                print("✅ Token Exchange Successful!")
-                data = response.json()
-                access_token = data.get("access_token")
-
-                user = User.objects.filter(id=state_user_id).first()
-                if user:
-                    user.fub_access_token = access_token
-                    user.save()
-                    return self.custom_redirect('apexapp://fub-callback?status=success')
-                else:
-                    return self.custom_redirect('apexapp://fub-callback?status=error&message=user_not_found')
-            else:
-                print(f"❌ FUB Rejected: {response.text}")
-                error_msg = urllib.parse.quote(response.text)
-                return self.custom_redirect(
-                    f'apexapp://fub-callback?status=error&message=fub_rejected&details={error_msg}')
+            user.fub_access_token = data.get("access_token")
+            user.fub_refresh_token = data.get("refresh_token")
+            user.save(update_fields=["fub_access_token", "fub_refresh_token"])
+            print(f"✅ FUB connected for {user.email}")
+            return self.custom_redirect('apexapp://fub-callback?status=success')
 
         except Exception as e:
-            print(f"🚨 Python Crash: {str(e)}")
+            print(f"🚨 FUB OAuth error: {str(e)}")
             error_msg = urllib.parse.quote(str(e))
-            return self.custom_redirect(f'apexapp://fub-callback?status=error&message=python_crash&details={error_msg}')
-        finally:
-            print(f"=== [DJANGO OAUTH {req_id}] END ===\n")
+            return self.custom_redirect(f'apexapp://fub-callback?status=error&message=exchange_failed&details={error_msg}')
 
 
 class FUBSendDocumentView(APIView):
