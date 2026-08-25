@@ -123,6 +123,52 @@ def _find_or_create_person(user, name: str, email: str, phone: str = ""):
     return None
 
 
+def backfill_deals(user) -> int:
+    """Posts a catch-up note for every one of the agent's deals that has never
+    been synced. Runs after a successful FUB connect, so the CRM reflects the
+    existing pipeline, not just deals created after connecting. Returns the
+    number of deals synced. Never raises."""
+    from django.core.files.storage import default_storage
+    from .models import Deal
+
+    synced = 0
+    try:
+        for deal in Deal.objects.filter(agent=user, fub_synced=False):
+            if deal.status == 'fully_executed':
+                subject = f"Contract fully executed — {deal.property_address}"
+                doc_key = deal.signed_pdf_url
+                line = "all parties have signed."
+            else:
+                subject = f"Offer packet — {deal.property_address} ({deal.get_status_display()})"
+                doc_key = deal.draft_pdf_url or deal.signed_pdf_url
+                line = f"current status: {deal.get_status_display()}."
+
+            link_html = ""
+            if doc_key:
+                try:
+                    link_html = f'<p>📄 <a href="{default_storage.url(doc_key)}" target="_blank">View the packet</a></p>'
+                except Exception:
+                    pass
+
+            ok = sync_document(
+                user,
+                buyer_name=deal.buyer_names,
+                buyer_email=deal.buyer_email or "",
+                subject=subject,
+                body_html=(
+                    f"<p><strong>Apex Integrations AI</strong>: {line}</p>"
+                    f"<p>Property: {deal.property_address}<br>Buyer(s): {deal.buyer_names}</p>{link_html}"
+                ),
+            )
+            if ok:
+                deal.fub_synced = True
+                deal.save(update_fields=["fub_synced"])
+                synced += 1
+    except Exception as e:
+        print(f"FUB backfill failed (non-fatal): {e}")
+    return synced
+
+
 def sync_document(user, buyer_name: str, buyer_email: str, subject: str,
                   body_html: str, buyer_phone: str = "") -> bool:
     """Attaches a note to the buyer's FUB timeline. Returns False (never

@@ -1,6 +1,6 @@
 from django.urls import path
 from . import views
-from .views import FUBAuthCallbackView, FUBSendDocumentView, FUBConnectURLView, FUBStatusView, \
+from .views import FUBAuthCallbackView, FUBSendDocumentView, FUBConnectURLView, FUBStatusView, FUBBackfillView, \
     DocumentPreviewEndpoint, DistributeExecutedPacketEndpoint, SendOnboardingBundleEndpoint
 
 urlpatterns = [
@@ -15,6 +15,7 @@ urlpatterns = [
     path('fub/callback/', FUBAuthCallbackView.as_view(), name='fub_auth_callback'),
     path('fub/connect-url/', FUBConnectURLView.as_view(), name='fub_connect_url'),
     path('fub/status/', FUBStatusView.as_view(), name='fub_status'),
+    path('fub/backfill/', FUBBackfillView.as_view(), name='fub_backfill'),
     path('fub/send/', FUBSendDocumentView.as_view(), name='fub_send_document'),
     path('documents/preview/<str:doc_type>/', DocumentPreviewEndpoint.as_view(), name='document_preview'),
     path('documents/send/<str:doc_type>/', SendOnboardingBundleEndpoint.as_view(), name='document_send'),

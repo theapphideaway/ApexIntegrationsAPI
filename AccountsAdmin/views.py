@@ -546,7 +546,7 @@ class SendOnboardingBundleEndpoint(APIView):
                     link_html = f'<p>📄 <a href="{default_storage.url(draft_path)}" target="_blank">View the packet</a></p>'
                 except Exception:
                     pass
-            fub_service.sync_document(
+            if fub_service.sync_document(
                 request.user,
                 buyer_name=primary_buyer.get("name", buyer_names),
                 buyer_email=primary_buyer.get("email", ""),
@@ -556,7 +556,9 @@ class SendOnboardingBundleEndpoint(APIView):
                     f"{buyer_names} for signature.</p>"
                     f"<p>Property: {property_address}<br>Documents: {doc_list}</p>{link_html}"
                 ),
-            )
+            ):
+                deal.fub_synced = True
+                deal.save(update_fields=["fub_synced"])
 
             return Response({
                 "status": "sent",
@@ -652,7 +654,7 @@ def docusign_webhook(request):
                     f'<p>📄 <a href="{signed_link}" target="_blank">View the executed packet</a></p>'
                     if signed_link else ""
                 )
-                fub_service.sync_document(
+                if fub_service.sync_document(
                     deal.agent,
                     buyer_name=deal.buyer_names,
                     buyer_email=deal.buyer_email or "",
@@ -661,7 +663,9 @@ def docusign_webhook(request):
                         f"<p><strong>Apex Integrations AI</strong>: all parties have signed.</p>"
                         f"<p>Property: {deal.property_address}<br>Buyer(s): {deal.buyer_names}</p>{link_html}"
                     ),
-                )
+                ):
+                    deal.fub_synced = True
+                    deal.save(update_fields=["fub_synced"])
 
             except Deal.DoesNotExist:
                 print(f"⚠️ [TRACE 9-WARN] No matching Deal row in database has docusign_envelope_id='{envelope_id}'")
@@ -848,6 +852,19 @@ class FUBStatusView(APIView):
         return Response({"connected": False})
 
 
+class FUBBackfillView(APIView):
+    """POST /api/auth/fub/backfill/ — sync any of the agent's not-yet-synced
+    deals to FUB. The connect flow runs this automatically; this endpoint
+    exists for manual catch-ups."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        if not request.user.fub_access_token:
+            return Response({"error": "Follow Up Boss is not connected."}, status=400)
+        count = fub_service.backfill_deals(request.user)
+        return Response({"synced": count})
+
+
 class FUBAuthCallbackView(APIView):
     permission_classes = []
 
@@ -883,6 +900,11 @@ class FUBAuthCallbackView(APIView):
             user.fub_refresh_token = data.get("refresh_token")
             user.save(update_fields=["fub_access_token", "fub_refresh_token"])
             print(f"✅ FUB connected for {user.email}")
+
+            # Catch the CRM up on the agent's existing pipeline.
+            count = fub_service.backfill_deals(user)
+            print(f"FUB backfill: synced {count} existing deal(s) for {user.email}")
+
             return self.custom_redirect('apexapp://fub-callback?status=success')
 
         except Exception as e:
