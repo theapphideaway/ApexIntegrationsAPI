@@ -16,6 +16,7 @@ from django.core import signing
 FUB_AUTHORIZE_URL = "https://app.followupboss.com/oauth/authorize"
 FUB_TOKEN_URL = "https://app.followupboss.com/oauth/token"
 FUB_API = "https://api.followupboss.com/v1"
+REQUEST_TIMEOUT = 15  # seconds — a slow CRM must never hang a uWSGI worker
 REDIRECT_URI = "https://www.apexintegrations.ai/api/auth/fub/callback/"
 
 # Signed-state protection: the state parameter proves the callback belongs to
@@ -54,6 +55,7 @@ def exchange_code(code: str, state: str) -> dict:
             "state": state.strip(),
         },
         auth=(settings.FUB_CLIENT_ID.strip(), settings.FUB_CLIENT_SECRET.strip()),
+        timeout=REQUEST_TIMEOUT,
     )
     response.raise_for_status()
     return response.json()
@@ -68,6 +70,7 @@ def _refresh(user) -> bool:
         FUB_TOKEN_URL,
         data={"grant_type": "refresh_token", "refresh_token": user.fub_refresh_token},
         auth=(settings.FUB_CLIENT_ID.strip(), settings.FUB_CLIENT_SECRET.strip()),
+        timeout=REQUEST_TIMEOUT,
     )
     if response.status_code != 200:
         user.fub_access_token = None
@@ -93,6 +96,7 @@ def _headers(user) -> dict:
 
 def _request(user, method: str, url: str, **kwargs):
     """FUB request with one automatic token refresh on 401."""
+    kwargs.setdefault("timeout", REQUEST_TIMEOUT)
     response = requests.request(method, url, headers=_headers(user), **kwargs)
     if response.status_code == 401 and _refresh(user):
         response = requests.request(method, url, headers=_headers(user), **kwargs)

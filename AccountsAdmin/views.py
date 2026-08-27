@@ -945,7 +945,7 @@ class FUBSendDocumentView(APIView):
         # STEP 1: Find Person by Email
         if email:
             search_url = f"https://api.followupboss.com/v1/people?email={urllib.parse.quote(email)}"
-            search_res = requests.get(search_url, headers=headers)
+            search_res = requests.get(search_url, headers=headers, timeout=15)
             if search_res.status_code == 200:
                 people = search_res.json().get('people', [])
                 if people:
@@ -966,7 +966,7 @@ class FUBSendDocumentView(APIView):
             if email: payload["emails"] = [{"value": email}]
             if phone: payload["phones"] = [{"value": phone}]
 
-            create_res = requests.post(create_url, json=payload, headers=headers)
+            create_res = requests.post(create_url, json=payload, headers=headers, timeout=15)
             if create_res.status_code in [200, 201]:
                 person_id = create_res.json().get('id')
             else:
@@ -986,7 +986,7 @@ class FUBSendDocumentView(APIView):
             "isHtml": True
         }
 
-        note_res = requests.post(note_url, json=note_payload, headers=headers)
+        note_res = requests.post(note_url, json=note_payload, headers=headers, timeout=15)
 
         if note_res.status_code in [200, 201]:
             return Response({"status": "success", "personId": person_id})

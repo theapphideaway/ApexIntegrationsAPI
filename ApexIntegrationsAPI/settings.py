@@ -94,6 +94,9 @@ DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
         'NAME': BASE_DIR / 'db.sqlite3',
+        # SQLite serializes writes; without a generous lock timeout, two agents
+        # saving at once produces intermittent "database is locked" 500s.
+        'OPTIONS': {'timeout': 25},
     }
 }
 
@@ -150,6 +153,8 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 AUTH_USER_MODEL = 'AccountsAdmin.CustomUser'
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'
+# Never let a stalled SMTP connection hang a login request (and its worker).
+EMAIL_TIMEOUT = 15
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
 EMAIL_USE_SSL = False
@@ -213,9 +218,11 @@ STORAGES = {
 }
 
 SIMPLE_JWT = {
-    # Extend the access token to 1 day (or whatever you prefer for testing)
     'ACCESS_TOKEN_LIFETIME': timedelta(days=1),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    # 60 days: agents shouldn't be force-logged-out mid-transaction. The app
+    # silently refreshes the access token; when the refresh token finally
+    # expires it cleanly routes back to the OTP login.
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=60),
     'ROTATE_REFRESH_TOKENS': False,
     'BLACKLIST_AFTER_ROTATION': True,
 }
