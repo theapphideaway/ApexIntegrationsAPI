@@ -138,6 +138,8 @@ class Deal(models.Model):
     # True once this deal has been posted to the agent's CRM (Follow Up Boss),
     # so connect-time backfills never create duplicate notes.
     fub_synced = models.BooleanField(default=False)
+    # Archived deals leave the active pipeline but are kept (and deletable).
+    is_archived = models.BooleanField(default=False)
 
     # State Management
     STATUS_CHOICES = [

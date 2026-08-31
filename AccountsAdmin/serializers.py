@@ -39,6 +39,7 @@ class DealSerializer(serializers.ModelSerializer):
             'docusign_envelope_id',
             'draft_pdf_url',
             'signed_pdf_url',
+            'is_archived',
             'updated_at'
         ]
 

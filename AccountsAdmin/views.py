@@ -792,6 +792,21 @@ class AgentDealsListCreateView(ListCreateAPIView):
         serializer.save(agent=self.request.user)
 
 
+class DealArchiveView(APIView):
+    """POST /api/deals/<pk>/archive/ with {"archived": true|false}.
+    Archived deals leave the active pipeline; delete stays a separate,
+    deliberate second step (and still voids in-flight envelopes)."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        deal = Deal.objects.filter(pk=pk, agent=request.user).first()
+        if deal is None:
+            return Response({"error": "Not found."}, status=404)
+        deal.is_archived = bool(request.data.get("archived", True))
+        deal.save(update_fields=["is_archived"])
+        return Response({"id": deal.id, "is_archived": deal.is_archived})
+
+
 class DealDetailEndpoint(RetrieveDestroyAPIView):
     """
     GET    /api/deals/<id>/  — fetch a single deal's full state.
