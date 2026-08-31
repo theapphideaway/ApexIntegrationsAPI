@@ -393,10 +393,13 @@ class PDFGenerationService:
         elif em_form == "cashiers_check":
             map["Earnest_Money_Evidence_Cashiers_Check"] = "X"
 
+        # Held-by defaults to the closing agency — a box must ALWAYS be
+        # checked, and closing agency is the office standard when the agent
+        # doesn't say otherwise.
         em_holder = data.get("earnestMoneyHolder")
         if em_holder == "listing_broker":
             map["Earnest_Money_Held_By_Broker"] = "X"
-        elif em_holder == "closing_agency":
+        else:
             map["Earnest_Money_Held_By_Company"] = "X"
 
         if financing_type != "cash":
@@ -1057,7 +1060,7 @@ class PDFGenerationService:
         # Agent line — inert until the agent is added as a DocuSign recipient.
         map['Agent or Broker on behalf of Brokerage Signature'] = "\\s3\\"
         map['Date_5'] = "\\d3\\"
-        map['Agent Phone'] = data.get("agentPhone", "")
+        map['Agent Phone'] = data.get("agentPhone") or data.get("sellingAgentPhone", "")
         map['Email_4'] = data.get("agentEmail", "")
 
         return map
@@ -1071,7 +1074,8 @@ class PDFGenerationService:
             or getattr(settings, "DEFAULT_SELLING_BROKERAGE", "")
         map['DESIGNATED BROKER'] = data.get("designatedBroker") or data.get("sellingAgent") \
             or getattr(settings, "DEFAULT_SELLING_AGENT", "")
-        map['PHONE NUMBER'] = data.get("brokeragePhone", "")
+        # The agent's phone stamps from their DB profile (apply_agent_identity).
+        map['PHONE NUMBER'] = data.get("brokeragePhone") or data.get("sellingAgentPhone", "")
 
         # --- DOCUSIGN TAGS (PAGE 2 ACKNOWLEDGMENT) ---
         # Template field names verified: SIGNATURE/DATE = line 1, SIGNATURE2/DATE2 = line 2.

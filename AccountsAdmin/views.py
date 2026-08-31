@@ -331,6 +331,8 @@ def apply_agent_identity(data, user):
     full_name = f"{user.first_name} {user.last_name}".strip()
     if full_name and not data.get("sellingAgent"):
         data["sellingAgent"] = full_name
+    if getattr(user, "phone_number", None) and not data.get("sellingAgentPhone"):
+        data["sellingAgentPhone"] = user.phone_number
     org = getattr(user, "organization", None)
     if org and getattr(org, "name", None) and not data.get("sellingBrokerage"):
         data["sellingBrokerage"] = org.name
