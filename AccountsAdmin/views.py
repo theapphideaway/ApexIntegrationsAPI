@@ -47,6 +47,16 @@ def landing_page(request):
     return render(request, 'landing_page.html')
 
 
+class IsAdminRole(IsAuthenticated):
+    """Admin-only endpoints: user management, organizations. Agents never
+    need these — every agent-facing endpoint scopes to request.user."""
+    def has_permission(self, request, view):
+        if not super().has_permission(request, view):
+            return False
+        user = request.user
+        return getattr(user, "role", "") == "admin" or user.is_staff
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def current_user(request):
@@ -59,7 +69,7 @@ def current_user(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAdminRole])
 def organization_list(request):
     """
     List all organizations
@@ -70,7 +80,7 @@ def organization_list(request):
 
 
 @api_view(['GET', 'POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAdminRole])
 def user_list(request):
     """
     List all users, or create a new user.
@@ -145,7 +155,7 @@ def request_otp(request):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAdminRole])
 def add_user(request):
     """
     Endpoint for a Brokerage/Admin to add a new agent.
@@ -196,7 +206,7 @@ def add_user(request):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAdminRole])
 def add_organization(request):
     """
     Endpoint for a Super Admin to explicitly add a new Organization (Brokerage).
@@ -297,7 +307,7 @@ def verify_otp(request):
 
 
 @api_view(['DELETE'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAdminRole])
 def delete_user(request, user_id):
     """
     Deletes a user from the system based on their UUID.
@@ -718,6 +728,9 @@ class RE21ContractStatusEndpoint(APIView):
         GET /api/contracts/status/<envelope_id>/
         Checks if the contract is signed and returns the status.
         """
+        # Agents can only query envelopes on their OWN deals.
+        if not Deal.objects.filter(docusign_envelope_id=envelope_id, agent=request.user).exists():
+            return Response({"error": "Not found."}, status=404)
         try:
             ds_service = DocuSignService()
 
@@ -765,25 +778,11 @@ class AgentDealsListCreateView(ListCreateAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        user = self.request.user
-
-        print(f"\n=== DEALS LIST DEBUG ===")
-        print(f"Request User Email: {user.email}")
-        print(f"Request User ID: {user.id}")
-
-        if settings.OTP_DEV_BYPASS and user.email.lower() == 'ianschoenrock@gmail.com':
-            deals = Deal.objects.filter(
-                Q(agent=user) | Q(agent__isnull=True)
-            ).order_by('-updated_at')
-
-            print(f"Admin Route Triggered. Found {deals.count()} deals.")
-            print(f"========================\n")
-            return deals
-
-        deals = Deal.objects.filter(agent=user).order_by('-updated_at')
-        print(f"Normal Agent Route Triggered. Found {deals.count()} deals.")
-        print(f"========================\n")
-        return deals
+        # STRICT per-agent scoping: every agent — admins and the dev-bypass
+        # account included — sees ONLY their own deals. Broker/office-wide
+        # visibility, if ever wanted, must be a deliberate feature, not a
+        # hardcoded email exception.
+        return Deal.objects.filter(agent=self.request.user).order_by('-updated_at')
 
     def perform_create(self, serializer):
         """
@@ -1011,6 +1010,9 @@ class DistributeExecutedPacketEndpoint(APIView):
 
         if not envelope_id:
             return Response({"error": "Missing envelope_id"}, status=400)
+        # Agents can only distribute packets from their OWN deals.
+        if not Deal.objects.filter(docusign_envelope_id=envelope_id, agent=request.user).exists():
+            return Response({"error": "Not found."}, status=404)
         if not property_address:
             return Response({"error": "Missing property_address"}, status=400)
         if not title_email and not lender_email:
