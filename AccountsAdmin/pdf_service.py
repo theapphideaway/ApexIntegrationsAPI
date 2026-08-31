@@ -950,6 +950,9 @@ class PDFGenerationService:
         map['buyer_name'] = brokerage         # Broker of ___
         map['BUYERS NAMES'] = both_buyers     # Page 2 header
         map['BUYERS NAMES_2'] = both_buyers   # Page 3 header
+        # Page 4 header — yet another mislabeled field: the long name below is
+        # actually the "BUYER'S NAME(S) ___" line at the top of the last page.
+        map['183 of money being exchanged BUYER is advised that Brokerage will not provide electronic transfer instructions by email Following money'] = both_buyers
 
         map['Acting as Agent for the Broker'] = agent_name  # AGENT line
 
