@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api, type Deal, type DealDocument, type DealState, type Me } from '../api'
 import { PHASES, STATUSES, isDone } from '../checklist'
+import { computeDeadlines, urgency } from '../deadlines'
+import CounterForm from '../components/CounterForm'
 
 export default function DealPage({ me }: { me: Me }) {
   const id = Number(useParams().id)
@@ -13,6 +15,7 @@ export default function DealPage({ me }: { me: Me }) {
   const [dragOver, setDragOver] = useState(false)
   const [uploadType, setUploadType] = useState<'other' | 're_13'>('other')
   const fileInput = useRef<HTMLInputElement>(null)
+  const [showCounter, setShowCounter] = useState<'respond' | 'new' | null>(null)
 
   const loadDocs = useCallback(() => api.documents(id).then(setDocs), [id])
 
@@ -54,9 +57,31 @@ export default function DealPage({ me }: { me: Me }) {
       </div>
 
       {counter && (
-        <a className="banner" href={counter.signed_pdf_url || counter.pdf_url || '#'} target="_blank" rel="noreferrer">
-          <b>{counter.title} received</b> — open the counter offer →
-        </a>
+        <div className="banner">
+          <div><b>{counter.title} received</b> — <a className="inv" href={counter.signed_pdf_url || counter.pdf_url || '#'} target="_blank" rel="noreferrer">open the counter offer →</a></div>
+          <button className="primary inv" onClick={() => setShowCounter('respond')}>Respond</button>
+        </div>
+      )}
+
+      {(() => { const dl = computeDeadlines(deal); return dl.length > 0 ? (
+        <section className="card" style={{ marginBottom: 20 }}>
+          <h2>Key Deadlines</h2>
+          <div className="deadlines">
+            {dl.map((x) => { const u = urgency(x.date); return (
+              <div className="dl" key={x.title}><span>{x.title}<span className="muted small"> · {x.note}</span></span><span className={`status ${u === 'overdue' ? 'bad' : u === 'soon' ? 'warn' : ''}`}>{x.date.toLocaleDateString()}</span></div>
+            )})}
+          </div>
+        </section>
+      ) : null })()}
+
+      {showCounter && (
+        <CounterForm
+          deal={deal}
+          mode={showCounter}
+          nextNumber={docs.filter((d) => d.doc_type === 're_13').length + 1}
+          onClose={() => setShowCounter(null)}
+          onSent={async () => { setShowCounter(null); await loadDocs(); setDeal(await api.deal(id)) }}
+        />
       )}
 
       <div className="grid">
@@ -71,7 +96,7 @@ export default function DealPage({ me }: { me: Me }) {
                   const s = state.checklist_state[t.key] || 'Not Started'
                   return (
                     <div className={`task ${isDone(s) ? 'done' : ''}`} key={t.key}>
-                      <span>{t.title}</span>
+                      <label className="check"><input type="checkbox" checked={isDone(s)} onChange={(e) => setStatus(t.key, e.target.checked ? 'Complete' : 'Not Started')} /><span>{t.title}</span></label>
                       <select value={s} onChange={(e) => setStatus(t.key, e.target.value)}>
                         {STATUSES.map((o) => <option key={o}>{o}</option>)}
                       </select>
@@ -84,7 +109,7 @@ export default function DealPage({ me }: { me: Me }) {
         </section>
 
         <section className="card">
-          <h2>Documents</h2>
+          <div className="cardhead"><h2>Documents</h2><button className="link" onClick={() => setShowCounter('new')}>+ Send a counter offer (RE-13)</button></div>
           <div className="doclist">
             {deal.signed_pdf_url && <a className="doc ok" href={deal.signed_pdf_url} target="_blank" rel="noreferrer"><b>Executed Packet</b><span>Signed by all parties</span></a>}
             {deal.draft_pdf_url && <a className="doc" href={deal.draft_pdf_url} target="_blank" rel="noreferrer"><b>Offer Packet</b><span>As sent for signature</span></a>}

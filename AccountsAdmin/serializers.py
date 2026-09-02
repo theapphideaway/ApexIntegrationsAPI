@@ -43,6 +43,7 @@ class DealSerializer(serializers.ModelSerializer):
             'signed_pdf_url',
             'is_archived',
             'acceptance_date',
+            'form_snapshot',
             'updated_at'
         ]
 

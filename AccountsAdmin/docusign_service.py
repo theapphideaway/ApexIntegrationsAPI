@@ -76,7 +76,8 @@ class DocuSignService:
             envelope=Envelope(status="voided", voided_reason=reason)
         )
 
-    def send_bundle_envelope(self, bundled_data: dict, buyers: list) -> dict:
+    def send_bundle_envelope(self, bundled_data: dict, buyers: list,
+                             email_subject: str = "Please sign your Onboarding & Purchase Packet") -> dict:
         """
         Generates all PDFs in the bundle, stitches them into a single DocuSign
         envelope, and emails it directly to the buyers for remote execution.
@@ -149,7 +150,7 @@ class DocuSignService:
 
         # 3. Create and Send the Envelope
         envelope_definition = EnvelopeDefinition(
-            email_subject="Please sign your Onboarding & Purchase Packet",
+            email_subject=email_subject,
             documents=docs_to_send,
             recipients=Recipients(signers=docusign_signers),
             status="sent"  # Fires off the emails immediately

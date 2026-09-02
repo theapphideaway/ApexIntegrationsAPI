@@ -49,6 +49,7 @@ urlpatterns = [
     path('api/deals/<int:pk>/', DealDetailEndpoint.as_view(), name='deal-detail'),
     path('api/deals/<int:pk>/archive/', DealArchiveView.as_view(), name='deal-archive'),
     path('api/deals/<int:pk>/documents/', DealDocumentsView.as_view(), name='deal-documents'),
+    path('api/deals/<int:pk>/documents/send/', DealDocumentSendView.as_view(), name='deal-document-send'),
     path('api/deals/<int:pk>/state/', DealStateView.as_view(), name='deal-state'),
 
     path('api/mls/listing/<str:mls_number>/', MLSListingProxyView.as_view(), name='mls_listing'),

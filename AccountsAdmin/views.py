@@ -878,6 +878,89 @@ class DealDocumentsView(APIView):
         return Response(DealDocumentSerializer(doc).data, status=201)
 
 
+class DealDocumentSendView(APIView):
+    """POST /api/deals/<pk>/documents/send/
+    Body: {doc_type: 're_13', fields: {...doc-specific...}, buyers?: [{name,email}],
+           resulting_terms?: {offerPrice?, closingDate?}}
+    Generates the document from the deal's RE-21 snapshot + the given fields,
+    sends it to the buyer(s) for signature under the deal's AGENT identity
+    (a TC may drive this), stores it as a DealDocument (out_for_signature),
+    and — for an accepted counter — folds the resulting terms back into the
+    deal so deadlines recompute everywhere."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        deal = deals_for(request.user).filter(pk=pk).first()
+        if deal is None:
+            return Response({"error": "Not found."}, status=404)
+
+        doc_type = (request.data.get("doc_type") or "re_13").strip()
+        if doc_type not in (DocumentType.RE_13, DocumentType.RE_10, DocumentType.RE_11):
+            return Response({"error": f"Unsupported document type '{doc_type}'."}, status=400)
+
+        fields = request.data.get("fields") or {}
+        if not isinstance(fields, dict):
+            return Response({"error": "fields must be an object."}, status=400)
+
+        # Signers: explicit list, else the deal's primary buyer.
+        buyers = request.data.get("buyers")
+        if not buyers:
+            if not deal.buyer_email:
+                return Response({"error": "This deal has no buyer email on file — pass buyers explicitly."}, status=400)
+            buyers = [{"name": deal.buyer_names, "email": deal.buyer_email}]
+
+        # Document data = the deal's RE-21 as sent + document-specific fields.
+        data = dict(deal.form_snapshot or {})
+        data.update({k: v for k, v in fields.items() if v not in (None, "")})
+        data.setdefault("propertyAddress", deal.property_address)
+        data.setdefault("buyerName", deal.buyer_names)
+        data["hasSecondBuyer"] = len(buyers) > 1
+        apply_agent_identity(data, deal.agent)
+
+        sequence = deal.documents.filter(doc_type=doc_type).count() + 1
+        if doc_type == DocumentType.RE_13:
+            data.setdefault("counterOfferNumber", str(sequence))
+            title = f"Counter Offer #{sequence}"
+        else:
+            title = doc_type.upper().replace("_", "-")
+
+        try:
+            result = DocuSignService().send_bundle_envelope(
+                bundled_data={doc_type: data}, buyers=buyers,
+                email_subject=f"Please sign: {title} — {deal.property_address}",
+            )
+        except Exception as e:
+            return Response({"error": f"DocuSign send failed: {e}"}, status=502)
+
+        envelope_id = result.get("envelope_id")
+        draft_key = None
+        for _dt, pdf_bytes in result.get("document_bytes", []):
+            try:
+                draft_key = default_storage.save(
+                    f"deal_documents/{deal.id}/{doc_type}_{envelope_id}.pdf", ContentFile(pdf_bytes))
+            except Exception as e:
+                print(f"Draft save failed (non-fatal): {e}")
+
+        doc = DealDocument.objects.create(
+            deal=deal, doc_type=doc_type, title=title, direction='sent', sequence=sequence,
+            status='out_for_signature', docusign_envelope_id=envelope_id, pdf_key=draft_key,
+        )
+
+        # Accepted counter → the deal's effective terms change.
+        terms = request.data.get("resulting_terms")
+        if isinstance(terms, dict) and terms:
+            snapshot = dict(deal.form_snapshot or {})
+            snapshot.update({k: v for k, v in terms.items() if v not in (None, "")})
+            deal.form_snapshot = snapshot
+            deal.save(update_fields=["form_snapshot"])
+
+        # A received counter that's being responded to is no longer pending.
+        deal.documents.filter(doc_type='re_13', direction='received', status='received') \
+            .update(status='signed' if fields.get("isSellerCounter", True) else 'rejected')
+
+        return Response(DealDocumentSerializer(doc).data, status=201)
+
+
 class DealStateView(APIView):
     """GET   /api/deals/<pk>/state/  → {checklist_state, form_snapshot, acceptance_date}
     PATCH /api/deals/<pk>/state/  with any subset. `checklist_state` MERGES by

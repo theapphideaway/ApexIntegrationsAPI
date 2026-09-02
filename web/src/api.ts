@@ -9,7 +9,7 @@ export type Deal = {
   id: number; agent_id: string; agent_name: string; property_address: string; buyer_names: string
   status: string; status_display: string; docusign_envelope_id: string | null
   draft_pdf_url: string | null; signed_pdf_url: string | null; is_archived: boolean
-  acceptance_date: string | null; updated_at: string
+  acceptance_date: string | null; form_snapshot: Record<string, any> | null; updated_at: string
 }
 export type DealDocument = {
   id: number; doc_type: string; title: string; direction: 'received' | 'sent'; sequence: number
@@ -56,6 +56,8 @@ export const api = {
   dealState: (id: number) => request<DealState>(`/api/deals/${id}/state/`),
   patchChecklist: (id: number, statuses: Record<string, string>) => request<DealState>(`/api/deals/${id}/state/`, { method: 'PATCH', body: JSON.stringify({ checklist_state: statuses }) }),
   documents: (id: number) => request<DealDocument[]>(`/api/deals/${id}/documents/`),
+  sendDocument: (id: number, body: { doc_type: string; fields: Record<string, unknown>; buyers?: { name: string; email: string }[]; resulting_terms?: Record<string, unknown> }) =>
+    request<DealDocument>(`/api/deals/${id}/documents/send/`, { method: 'POST', body: JSON.stringify(body) }),
   uploadDocument: (id: number, file: File, docType: string) => {
     const form = new FormData()
     form.append('file', file); form.append('doc_type', docType); form.append('direction', 'received')

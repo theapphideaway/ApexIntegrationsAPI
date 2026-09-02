@@ -4,6 +4,7 @@ import { api, auth, type Me } from './api'
 import Login from './pages/Login'
 import Pipeline from './pages/Pipeline'
 import DealPage from './pages/Deal'
+import DueSoon from './pages/DueSoon'
 
 const ROLE_LABEL: Record<Me['role'], string> = { admin: 'Team Admin', tc: 'Transaction Coordinator', agent: 'Agent' }
 
@@ -31,7 +32,11 @@ export default function App() {
   return (
     <div className="shell">
       <header className="topbar">
-        <Link to="/" className="brand">Apex · Deal Desk</Link>
+        <nav className="nav">
+          <Link to="/" className="brand">Apex · Deal Desk</Link>
+          <Link to="/">Pipeline</Link>
+          <Link to="/due">Due Soon</Link>
+        </nav>
         <div className="who">
           <span>{me.first_name} {me.last_name}</span>
           <span className="pill">{ROLE_LABEL[me.role]}</span>
@@ -41,6 +46,7 @@ export default function App() {
       <main className="content">
         <Routes>
           <Route path="/" element={<Pipeline me={me} />} />
+          <Route path="/due" element={<DueSoon me={me} />} />
           <Route path="/deals/:id" element={<DealPage me={me} />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
