@@ -47,6 +47,15 @@ def landing_page(request):
     return render(request, 'landing_page.html')
 
 
+def portal_index(request, *args, **kwargs):
+    """Serves the built web portal (web/dist) at /portal/ — same origin as
+    the API, so the browser client needs no CORS and no separate hosting."""
+    index = settings.BASE_DIR / 'web' / 'dist' / 'index.html'
+    if not index.exists():
+        return HttpResponse("Portal not built yet.", status=503)
+    return HttpResponse(index.read_text(), content_type='text/html')
+
+
 def is_team_role(user) -> bool:
     """TCs and team admins work every deal on their team."""
     return getattr(user, "role", "") in ("tc", "admin")

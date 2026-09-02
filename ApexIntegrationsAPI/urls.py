@@ -19,8 +19,11 @@ from django.urls import path, include
 from rest_framework_simplejwt.views import TokenRefreshView
 
 # Make sure to import your new Document endpoints here
+from django.conf import settings
+from django.urls import re_path
+from django.views.static import serve as static_serve
 from AccountsAdmin.views import (
-    DealArchiveView, DealDocumentsView, DealStateView,
+    portal_index, DealArchiveView, DealDocumentsView, DealStateView,
     docusign_webhook,
     RE21ContractStatusEndpoint,
     AgentDealsListCreateView,
@@ -52,4 +55,8 @@ urlpatterns = [
     path('api/mls/search/', MLSAddressSearchView.as_view(), name='mls_search'),
 
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+
+    # Web portal (built React app in web/dist), same origin as the API.
+    re_path(r'^portal/assets/(?P<path>.*)$', static_serve, {'document_root': settings.BASE_DIR / 'web' / 'dist' / 'assets'}),
+    re_path(r'^portal(?:/.*)?$', portal_index, name='portal'),
 ]
