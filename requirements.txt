@@ -9,3 +9,5 @@ boto3
 django-storages
 requests~=2.31.0
 pusher
+psycopg2-binary>=2.9
+dj-database-url>=2.1

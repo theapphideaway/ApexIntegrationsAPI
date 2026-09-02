@@ -90,15 +90,28 @@ WSGI_APPLICATION = 'ApexIntegrationsAPI.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-        # SQLite serializes writes; without a generous lock timeout, two agents
-        # saving at once produces intermittent "database is locked" 500s.
-        'OPTIONS': {'timeout': 25},
+# Postgres in production (set DATABASE_URL in .env, e.g. from Neon/RDS:
+#   postgresql://user:pass@host/dbname?sslmode=require
+# ). SQLite remains the zero-config fallback for local development only —
+# it has taken the live API down twice with file locks and is NOT for prod.
+_DATABASE_URL = os.environ.get('DATABASE_URL', '')
+if _DATABASE_URL:
+    import dj_database_url
+    DATABASES = {
+        'default': dj_database_url.parse(
+            _DATABASE_URL,
+            conn_max_age=600,          # persistent connections per worker
+            conn_health_checks=True,   # recover cleanly from dropped conns
+        )
     }
-}
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+            'OPTIONS': {'timeout': 25},
+        }
+    }
 
 
 # Password validation
