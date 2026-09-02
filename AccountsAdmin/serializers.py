@@ -12,10 +12,11 @@ class OrganizationSerializer(serializers.ModelSerializer):
 class CustomUserSerializer(serializers.ModelSerializer):
     # We use PrimaryKeyRelatedField so Postman can just send the Organization UUID string
     organization = serializers.PrimaryKeyRelatedField(queryset=Organization.objects.all())
+    is_superuser = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = CustomUser
-        fields = ['id', 'email', 'first_name', 'last_name', 'phone_number', 'role', 'organization']
+        fields = ['id', 'email', 'first_name', 'last_name', 'phone_number', 'role', 'organization', 'is_superuser']
 
 
 class DealSerializer(serializers.ModelSerializer):

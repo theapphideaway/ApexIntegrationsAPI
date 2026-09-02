@@ -22,6 +22,7 @@ from rest_framework_simplejwt.views import TokenRefreshView
 from django.conf import settings
 from django.urls import re_path
 from django.views.static import serve as static_serve
+from AccountsAdmin import dev_views
 from AccountsAdmin.views import (
     portal_index, DealArchiveView, DealDocumentsView, DealStateView,
     docusign_webhook,
@@ -56,6 +57,14 @@ urlpatterns = [
     path('api/mls/search/', MLSAddressSearchView.as_view(), name='mls_search'),
 
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+
+    # Developer / super-admin portal API (superuser only).
+    path('api/dev/settings/', dev_views.DevSettingsView.as_view(), name='dev-settings'),
+    path('api/dev/docusign/test/', dev_views.DevDocuSignTestView.as_view(), name='dev-docusign-test'),
+    path('api/dev/teams/', dev_views.DevTeamsView.as_view(), name='dev-teams'),
+    path('api/dev/teams/<uuid:pk>/', dev_views.DevTeamDetailView.as_view(), name='dev-team-detail'),
+    path('api/dev/users/', dev_views.DevUsersView.as_view(), name='dev-users'),
+    path('api/dev/users/<uuid:pk>/', dev_views.DevUserDetailView.as_view(), name='dev-user-detail'),
 
     # Web portal (built React app in web/dist), same origin as the API.
     re_path(r'^portal/assets/(?P<path>.*)$', static_serve, {'document_root': settings.BASE_DIR / 'web' / 'dist' / 'assets'}),

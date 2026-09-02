@@ -5,6 +5,8 @@ import Login from './pages/Login'
 import Pipeline from './pages/Pipeline'
 import DealPage from './pages/Deal'
 import DueSoon from './pages/DueSoon'
+import Dev from './pages/Dev'
+import Console from './components/Console'
 
 const ROLE_LABEL: Record<Me['role'], string> = { admin: 'Team Admin', tc: 'Transaction Coordinator', agent: 'Agent' }
 
@@ -12,6 +14,7 @@ export default function App() {
   const [me, setMe] = useState<Me | null>(null)
   const [loading, setLoading] = useState(auth.isLoggedIn)
   const navigate = useNavigate()
+  const [consoleOpen, setConsoleOpen] = useState(false)
 
   useEffect(() => {
     if (!auth.isLoggedIn) return
@@ -36,21 +39,27 @@ export default function App() {
           <Link to="/" className="brand">Apex · Deal Desk</Link>
           <Link to="/">Pipeline</Link>
           <Link to="/due">Due Soon</Link>
+          {me.is_superuser && <Link to="/dev" className="dev">Dev</Link>}
         </nav>
         <div className="who">
           <span>{me.first_name} {me.last_name}</span>
           <span className="pill">{ROLE_LABEL[me.role]}</span>
+          {me.is_superuser && <button className="link" onClick={() => setConsoleOpen((v) => !v)}>{consoleOpen ? 'Hide console' : 'Console'}</button>}
           <button className="link" onClick={() => { auth.clear(); setMe(null); navigate('/login') }}>Log out</button>
         </div>
       </header>
+      <div className={`body ${consoleOpen ? 'with-console' : ''}`}>
       <main className="content">
         <Routes>
           <Route path="/" element={<Pipeline me={me} />} />
           <Route path="/due" element={<DueSoon me={me} />} />
+          {me.is_superuser && <Route path="/dev" element={<Dev me={me} />} />}
           <Route path="/deals/:id" element={<DealPage me={me} />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
+      <Console open={consoleOpen} onClose={() => setConsoleOpen(false)} />
+      </div>
     </div>
   )
 }

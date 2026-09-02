@@ -205,3 +205,16 @@ class DealDocument(models.Model):
 
     def __str__(self):
         return f"{self.title} ({self.deal_id})"
+
+
+class AppSetting(models.Model):
+    """Runtime configuration editable from the dev portal (no redeploy):
+    e.g. docusign_env = "demo" | "production". Secrets never live here —
+    they stay in .env; settings only choose between them."""
+    key = models.CharField(max_length=100, primary_key=True)
+    value = models.JSONField(default=dict)
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(CustomUser, null=True, blank=True, on_delete=models.SET_NULL)
+
+    def __str__(self):
+        return f"{self.key}={self.value}"

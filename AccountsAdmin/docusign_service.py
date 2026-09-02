@@ -8,22 +8,52 @@ from ApexIntegrationsAPI import settings
 
 
 class DocuSignService:
-    def __init__(self):
-        self.client_id = os.environ.get("DOCUSIGN_CLIENT_ID")
-        self.user_id = os.environ.get("DOCUSIGN_USER_ID")
-        self.account_id = os.environ.get("DOCUSIGN_ACCOUNT_ID")
-        self.private_key_path = os.environ.get("DOCUSIGN_PRIVATE_KEY_PATH")
-        self.auth_server = 'account-d.docusign.com'  # '-d' denotes the demo/developer server
-        self.base_path = 'https://demo.docusign.net/restapi'
+    @staticmethod
+    def env_config(env: str) -> dict:
+        """Credential set for an environment. Demo = the DOCUSIGN_* vars we
+        have used all along; production = DOCUSIGN_PROD_* (its own integration
+        key, impersonated user, account, account-specific base URL and key)."""
+        if env == "production":
+            return {
+                "env": "production",
+                "client_id": os.environ.get("DOCUSIGN_PROD_CLIENT_ID"),
+                "user_id": os.environ.get("DOCUSIGN_PROD_USER_ID"),
+                "account_id": os.environ.get("DOCUSIGN_PROD_ACCOUNT_ID"),
+                "auth_server": "account.docusign.com",
+                "base_path": os.environ.get("DOCUSIGN_PROD_BASE_PATH", "https://na4.docusign.net/restapi"),
+                "private_key_path": os.path.join(settings.BASE_DIR, os.environ.get("DOCUSIGN_PROD_PRIVATE_KEY", "private_key_prod.pem")),
+            }
+        return {
+            "env": "demo",
+            "client_id": os.environ.get("DOCUSIGN_CLIENT_ID"),
+            "user_id": os.environ.get("DOCUSIGN_USER_ID"),
+            "account_id": os.environ.get("DOCUSIGN_ACCOUNT_ID"),
+            "auth_server": "account-d.docusign.com",  # '-d' = developer sandbox
+            "base_path": "https://demo.docusign.net/restapi",
+            "private_key_path": os.path.join(settings.BASE_DIR, "private_key.pem"),
+        }
+
+    @staticmethod
+    def current_env() -> str:
+        from .settings_service import get_setting
+        return get_setting("docusign_env", "demo") or "demo"
+
+    def __init__(self, env: str = None):
+        cfg = self.env_config(env or self.current_env())
+        self.env = cfg["env"]
+        self.client_id = cfg["client_id"]
+        self.user_id = cfg["user_id"]
+        self.account_id = cfg["account_id"]
+        self.private_key_path = cfg["private_key_path"]
+        self.auth_server = cfg["auth_server"]
+        self.base_path = cfg["base_path"]
 
     def _get_access_token(self):
         """Authenticates with DocuSign via JWT and returns a temporary access token."""
         api_client = ApiClient()
         api_client.set_base_path(self.auth_server)
-        private_key_path = os.path.join(settings.BASE_DIR, 'private_key.pem')
 
-        # 2. Open the file using that absolute path
-        with open(private_key_path, "rb") as key_file:
+        with open(self.private_key_path, "rb") as key_file:
             private_key_bytes = key_file.read()
 
         token_response = api_client.request_jwt_user_token(
@@ -35,6 +65,21 @@ class DocuSignService:
             scopes=["signature", "impersonation"]
         )
         return token_response.access_token
+
+    def test_connection(self) -> dict:
+        """Dev-portal check: JWT auth + userinfo for the selected environment."""
+        access_token = self._get_access_token()
+        api_client = ApiClient()
+        api_client.set_base_path(self.auth_server)
+        info = api_client.get_user_info(access_token)
+        accounts = [{
+            "account_id": a.account_id, "name": a.account_name, "base_uri": a.base_uri, "is_default": a.is_default,
+        } for a in (info.accounts or [])]
+        return {
+            "env": self.env, "auth_server": self.auth_server, "base_path": self.base_path,
+            "user": info.name, "email": info.email, "accounts": accounts,
+            "configured_account_matches": any(a["account_id"] == self.account_id for a in accounts),
+        }
 
     def download_envelope_document(self, envelope_id: str) -> bytes:
         """Retrieves the fully signed PDF from DocuSign using the envelope ID."""
