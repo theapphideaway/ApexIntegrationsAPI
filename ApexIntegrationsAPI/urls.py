@@ -24,7 +24,7 @@ from django.urls import re_path
 from django.views.static import serve as static_serve
 from AccountsAdmin import dev_views
 from AccountsAdmin.views import (
-    portal_index, DealArchiveView, DealDocumentsView, DealStateView,
+    portal_index, DealArchiveView, DealDocumentsView, DealDocumentSendView, DealStateView,
     docusign_webhook,
     RE21ContractStatusEndpoint,
     AgentDealsListCreateView,
