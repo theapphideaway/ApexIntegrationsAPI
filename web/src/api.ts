@@ -77,7 +77,24 @@ async function request<T>(path: string, init: RequestInit = {}, retry = true): P
   return parsed as T
 }
 
+/** Binary-returning request (PDF preview). Same auth/refresh rules. */
+export async function requestBlob(path: string, body: unknown): Promise<Blob> {
+  const started = performance.now()
+  const doFetch = () => fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(auth.access ? { Authorization: `Bearer ${auth.access}` } : {}) }, body: JSON.stringify(body) })
+  let r = await doFetch()
+  if (r.status === 401 && (await refresh())) r = await doFetch()
+  consoleBus.emit({ method: 'POST', path, status: r.status, ms: performance.now() - started, request: body, response: r.ok ? `<${r.headers.get('content-type')} ${r.headers.get('content-length') || '?'} bytes>` : await r.clone().text() })
+  if (!r.ok) { const t = await r.text(); try { throw new Error(JSON.parse(t).error || t) } catch (e) { throw e instanceof Error ? e : new Error(t) } }
+  return r.blob()
+}
+
 export const api = {
+  // ---- MLS (server-side credential; returns RESO envelopes) ----
+  mlsSearch: (address: string) => request<{ value: Record<string, unknown>[] }>(`/api/mls/search/?address=${encodeURIComponent(address)}`),
+  mlsListing: (mlsNumber: string) => request<{ value: Record<string, unknown>[] }>(`/api/mls/listing/${encodeURIComponent(mlsNumber)}/`),
+  // ---- Packet ----
+  previewBundle: (body: unknown) => requestBlob('/api/documents/preview-bundle/', body),
+  sendPacket: (body: unknown) => request<{ status: string; envelope_id: string; deal_id: number }>('/api/auth/documents/send/re_21/', { method: 'POST', body: JSON.stringify(body) }),
   requestOtp: (email: string) => request<{ message: string }>('/api/auth/request-otp/', { method: 'POST', body: JSON.stringify({ email }) }),
   verifyOtp: (email: string, code: string) => request<{ access: string; refresh: string; user_id: string }>('/api/auth/verify-otp/', { method: 'POST', body: JSON.stringify({ email, code }) }),
   me: () => request<Me>('/api/auth/users/me/'),

@@ -37,6 +37,7 @@ export default function Pipeline({ me }: { me: Me }) {
       <div className="pagehead">
         <h1>{teamView ? 'Team Pipeline' : 'My Pipeline'}</h1>
         <div className="filters">
+          {me.role === 'agent' && <Link to="/new" className="primary btnlink">+ Start from property</Link>}
           {teamView && <label className="toggle"><input type="checkbox" checked={groupByAgent} onChange={(e) => setGroupByAgent(e.target.checked)} /> Group by agent</label>}
           <label className="toggle"><input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} /> Show archived</label>
         </div>
