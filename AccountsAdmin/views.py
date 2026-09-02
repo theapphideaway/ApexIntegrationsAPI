@@ -30,8 +30,8 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import Organization, CustomUser, OTPCode, Deal
-from .serializers import OrganizationSerializer, CustomUserSerializer, DealSerializer
+from .models import Organization, CustomUser, OTPCode, Deal, DealDocument
+from .serializers import OrganizationSerializer, CustomUserSerializer, DealSerializer, DealDocumentSerializer
 from django.core.mail import send_mail, EmailMessage
 from django.conf import settings
 
@@ -680,6 +680,15 @@ def docusign_webhook(request):
                     deal.save(update_fields=["fub_synced"])
 
             except Deal.DoesNotExist:
+                # Not the packet — maybe a DealDocument's envelope (counter,
+                # RE-10…): store its signed file and mark it signed.
+                doc = DealDocument.objects.filter(docusign_envelope_id=envelope_id).first()
+                if doc is not None:
+                    doc.signed_pdf_key = saved_path
+                    doc.status = 'signed'
+                    doc.save(update_fields=['signed_pdf_key', 'status'])
+                    print(f"✅ DealDocument {doc.id} ('{doc.title}') signed for deal {doc.deal_id}")
+                    return Response({"status": "received"}, status=200)
                 print(f"⚠️ [TRACE 9-WARN] No matching Deal row in database has docusign_envelope_id='{envelope_id}'")
                 print(
                     "💡 Pro Tip: If you sent this via the DocuSign web dashboard instead of the iOS app, no DB row will match!")
@@ -790,6 +799,49 @@ class AgentDealsListCreateView(ListCreateAPIView):
         tie the new Deal to the currently authenticated Agent.
         """
         serializer.save(agent=self.request.user)
+
+
+class DealDocumentsView(APIView):
+    """GET  /api/deals/<pk>/documents/   — the deal's document trail.
+    POST /api/deals/<pk>/documents/   — attach a file (multipart: file,
+    doc_type, title?, direction?). Counters (doc_type re_13) auto-number."""
+    permission_classes = [IsAuthenticated]
+
+    def get_deal(self, request, pk):
+        return Deal.objects.filter(pk=pk, agent=request.user).first()
+
+    def get(self, request, pk):
+        deal = self.get_deal(request, pk)
+        if deal is None:
+            return Response({"error": "Not found."}, status=404)
+        docs = deal.documents.order_by('-created_at')
+        return Response(DealDocumentSerializer(docs, many=True).data)
+
+    def post(self, request, pk):
+        deal = self.get_deal(request, pk)
+        if deal is None:
+            return Response({"error": "Not found."}, status=404)
+        upload = request.FILES.get('file')
+        if upload is None:
+            return Response({"error": "Missing file."}, status=400)
+        if upload.size > 25 * 1024 * 1024:
+            return Response({"error": "File too large (25 MB max)."}, status=400)
+
+        doc_type = (request.data.get('doc_type') or 'other').strip()
+        direction = (request.data.get('direction') or 'received').strip()
+        sequence = deal.documents.filter(doc_type=doc_type).count() + 1
+        default_title = f"Counter Offer #{sequence}" if doc_type == 're_13' else (upload.name or "Document")
+        title = (request.data.get('title') or default_title).strip()
+
+        import uuid as _uuid
+        safe_name = (upload.name or 'document.pdf').replace('/', '_')
+        key = default_storage.save(f"deal_documents/{deal.id}/{_uuid.uuid4().hex[:8]}_{safe_name}",
+                                   ContentFile(upload.read()))
+        doc = DealDocument.objects.create(
+            deal=deal, doc_type=doc_type, title=title, direction=direction,
+            sequence=sequence, status='received', pdf_key=key,
+        )
+        return Response(DealDocumentSerializer(doc).data, status=201)
 
 
 class DealArchiveView(APIView):

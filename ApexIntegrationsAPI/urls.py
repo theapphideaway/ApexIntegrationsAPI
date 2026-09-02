@@ -20,7 +20,7 @@ from rest_framework_simplejwt.views import TokenRefreshView
 
 # Make sure to import your new Document endpoints here
 from AccountsAdmin.views import (
-    DealArchiveView,
+    DealArchiveView, DealDocumentsView,
     docusign_webhook,
     RE21ContractStatusEndpoint,
     AgentDealsListCreateView,
@@ -45,6 +45,7 @@ urlpatterns = [
     path('api/deals/', AgentDealsListCreateView.as_view(), name='agent-deals-list-create'),
     path('api/deals/<int:pk>/', DealDetailEndpoint.as_view(), name='deal-detail'),
     path('api/deals/<int:pk>/archive/', DealArchiveView.as_view(), name='deal-archive'),
+    path('api/deals/<int:pk>/documents/', DealDocumentsView.as_view(), name='deal-documents'),
 
     path('api/mls/listing/<str:mls_number>/', MLSListingProxyView.as_view(), name='mls_listing'),
     path('api/mls/search/', MLSAddressSearchView.as_view(), name='mls_search'),

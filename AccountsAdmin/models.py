@@ -163,3 +163,31 @@ class Deal(models.Model):
 
     def __str__(self):
         return f"{self.property_address} - {self.buyer_names}"
+
+
+class DealDocument(models.Model):
+    """A document attached to a deal beyond the original packet: received
+    counter offers, sent counters, RE-10s, addenda, invoices… Each may carry
+    its own DocuSign envelope. This is the backbone for negotiation flows and
+    (later) seller-side and web uploads."""
+    DIRECTION_CHOICES = [('received', 'Received'), ('sent', 'Sent')]
+    STATUS_CHOICES = [
+        ('received', 'Received'),
+        ('out_for_signature', 'Out for signature'),
+        ('signed', 'Signed'),
+        ('rejected', 'Rejected'),
+    ]
+
+    deal = models.ForeignKey(Deal, on_delete=models.CASCADE, related_name='documents')
+    doc_type = models.CharField(max_length=40, default='other')  # 're_13', 're_10', 'other'
+    title = models.CharField(max_length=200)
+    direction = models.CharField(max_length=10, choices=DIRECTION_CHOICES, default='received')
+    sequence = models.PositiveIntegerField(default=1)  # counter #1, #2…
+    status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='received')
+    docusign_envelope_id = models.CharField(max_length=100, blank=True, null=True)
+    pdf_key = models.CharField(max_length=500, blank=True, null=True)
+    signed_pdf_key = models.CharField(max_length=500, blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.title} ({self.deal_id})"

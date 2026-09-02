@@ -1,6 +1,6 @@
 from django.core.files.storage import default_storage
 from rest_framework import serializers
-from .models import Organization, CustomUser, Deal
+from .models import Organization, CustomUser, Deal, DealDocument
 
 
 class OrganizationSerializer(serializers.ModelSerializer):
@@ -71,3 +71,29 @@ class DealSerializer(serializers.ModelSerializer):
             return obj.signed_pdf_url
 
         return default_storage.url(obj.signed_pdf_url)
+
+class DealDocumentSerializer(serializers.ModelSerializer):
+    pdf_url = serializers.SerializerMethodField()
+    signed_pdf_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DealDocument
+        fields = ['id', 'doc_type', 'title', 'direction', 'sequence', 'status',
+                  'docusign_envelope_id', 'pdf_url', 'signed_pdf_url', 'created_at']
+
+    def _url(self, key):
+        if not key:
+            return None
+        if key.startswith('http'):
+            return key
+        from django.core.files.storage import default_storage
+        try:
+            return default_storage.url(key)
+        except Exception:
+            return None
+
+    def get_pdf_url(self, obj):
+        return self._url(obj.pdf_key)
+
+    def get_signed_pdf_url(self, obj):
+        return self._url(obj.signed_pdf_key)
