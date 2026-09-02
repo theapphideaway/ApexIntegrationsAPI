@@ -88,8 +88,10 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     # Metadata
     date_joined = models.DateTimeField(default=timezone.now)
     last_login_ip = models.GenericIPAddressField(null=True, blank=True)  # Good for security audits
-    fub_access_token = models.CharField(max_length=255, blank=True, null=True)
-    fub_refresh_token = models.CharField(max_length=255, blank=True, null=True)
+    # TextField: OAuth tokens have no fixed length (SQLite ignored the old
+    # 255 cap; Postgres enforces it and rejected real FUB tokens).
+    fub_access_token = models.TextField(blank=True, null=True)
+    fub_refresh_token = models.TextField(blank=True, null=True)
 
     objects = CustomUserManager()
 
@@ -154,9 +156,10 @@ class Deal(models.Model):
     # DocuSign Tracking
     docusign_envelope_id = models.CharField(max_length=100, blank=True, null=True)
 
-    # S3 File URLs (We store both to maintain the history)
-    draft_pdf_url = models.URLField(max_length=500, blank=True, null=True)
-    signed_pdf_url = models.URLField(max_length=500, blank=True, null=True)
+    # S3 keys (legacy rows hold full presigned URLs, which run past 500
+    # chars — TextField so Postgres accepts the old data).
+    draft_pdf_url = models.TextField(blank=True, null=True)
+    signed_pdf_url = models.TextField(blank=True, null=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
