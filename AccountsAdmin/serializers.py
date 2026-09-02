@@ -26,12 +26,14 @@ class DealSerializer(serializers.ModelSerializer):
     signed_pdf_url = serializers.SerializerMethodField()
 
     agent_id = serializers.SerializerMethodField()
+    agent_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Deal
         fields = [
             'id',
             'agent_id',
+            'agent_name',
             'property_address',
             'buyer_names',
             'status',
@@ -40,8 +42,14 @@ class DealSerializer(serializers.ModelSerializer):
             'draft_pdf_url',
             'signed_pdf_url',
             'is_archived',
+            'acceptance_date',
             'updated_at'
         ]
+
+    def get_agent_name(self, obj):
+        a = getattr(obj, 'agent', None)
+        return f"{a.first_name} {a.last_name}".strip() if a else ""
+
 
     def get_agent_id(self, obj):
         # Assuming your Deal model has an 'agent' ForeignKey, Django automatically

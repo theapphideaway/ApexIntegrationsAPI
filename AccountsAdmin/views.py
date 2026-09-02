@@ -47,6 +47,19 @@ def landing_page(request):
     return render(request, 'landing_page.html')
 
 
+def is_team_role(user) -> bool:
+    """TCs and team admins work every deal on their team."""
+    return getattr(user, "role", "") in ("tc", "admin")
+
+
+def deals_for(user):
+    """Role-based deal visibility: agents see their own deals; TCs and team
+    admins see every deal whose agent is on their team."""
+    if is_team_role(user) and getattr(user, "organization_id", None):
+        return Deal.objects.filter(agent__organization_id=user.organization_id)
+    return Deal.objects.filter(agent=user)
+
+
 class IsAdminRole(IsAuthenticated):
     """Admin-only endpoints: user management, organizations. Agents never
     need these — every agent-facing endpoint scopes to request.user."""
@@ -496,10 +509,22 @@ class SendOnboardingBundleEndpoint(APIView):
                 DocumentType.RE_21: payload,
             }
 
-        # Stamp the agent/brokerage from the authenticated user onto every doc
-        # (the RE-14 header needs them too, not just the RE-21).
+        # Who owns this deal? The sender — unless a TC/team admin is sending on
+        # behalf of an agent on their team (`agent_id`). Identity stamped on
+        # the contracts is always the OWNER's, never the TC's.
+        owner = request.user
+        for_agent_id = payload.get("agent_id")
+        if for_agent_id and str(for_agent_id) != str(request.user.id):
+            if not is_team_role(request.user):
+                return Response({"error": "Only a TC or team admin can send on another agent's behalf."}, status=403)
+            owner = CustomUser.objects.filter(
+                id=for_agent_id, organization_id=request.user.organization_id
+            ).first()
+            if owner is None:
+                return Response({"error": "That agent isn't on your team."}, status=400)
+
         for doc_payload in bundled_data.values():
-            apply_agent_identity(doc_payload, request.user)
+            apply_agent_identity(doc_payload, owner)
 
         try:
             # 3. Call your multi-document bundle method
@@ -538,12 +563,13 @@ class SendOnboardingBundleEndpoint(APIView):
 
             # 5. Save/Update Deal in Postgres
             deal = Deal.objects.create(
-                agent=request.user,
+                agent=owner,
                 docusign_envelope_id=envelope_id,
                 property_address=property_address,
                 buyer_names=buyer_names,
                 buyer_email=primary_buyer.get("email") or None,
                 draft_pdf_url=draft_path,
+                form_snapshot=re21_data,   # server-side copy → any device can revise
                 status='out_for_signature'
             )
 
@@ -559,7 +585,7 @@ class SendOnboardingBundleEndpoint(APIView):
                 except Exception:
                     pass
             if fub_service.sync_document(
-                request.user,
+                owner,
                 buyer_name=primary_buyer.get("name", buyer_names),
                 buyer_email=primary_buyer.get("email", ""),
                 subject=f"Offer packet sent for signature — {property_address}",
@@ -653,6 +679,8 @@ def docusign_webhook(request):
                 print(f"📊 [TRACE 9] Match found! Deal ID: {deal.id}. Address: {deal.property_address}")
                 deal.status = 'fully_executed'
                 deal.signed_pdf_url = saved_path
+                if deal.acceptance_date is None:
+                    deal.acceptance_date = timezone.now()
                 deal.save()
                 print("✅ [TRACE 10] Postgres database update successful!")
 
@@ -737,8 +765,8 @@ class RE21ContractStatusEndpoint(APIView):
         GET /api/contracts/status/<envelope_id>/
         Checks if the contract is signed and returns the status.
         """
-        # Agents can only query envelopes on their OWN deals.
-        if not Deal.objects.filter(docusign_envelope_id=envelope_id, agent=request.user).exists():
+        # Only envelopes on deals this user can see (own, or team for TC/admin).
+        if not deals_for(request.user).filter(docusign_envelope_id=envelope_id).exists():
             return Response({"error": "Not found."}, status=404)
         try:
             ds_service = DocuSignService()
@@ -787,11 +815,8 @@ class AgentDealsListCreateView(ListCreateAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        # STRICT per-agent scoping: every agent — admins and the dev-bypass
-        # account included — sees ONLY their own deals. Broker/office-wide
-        # visibility, if ever wanted, must be a deliberate feature, not a
-        # hardcoded email exception.
-        return Deal.objects.filter(agent=self.request.user).order_by('-updated_at')
+        # Role-based: agents see their own deals; TCs/team admins see the team's.
+        return deals_for(self.request.user).order_by('-updated_at')
 
     def perform_create(self, serializer):
         """
@@ -808,7 +833,7 @@ class DealDocumentsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get_deal(self, request, pk):
-        return Deal.objects.filter(pk=pk, agent=request.user).first()
+        return deals_for(request.user).filter(pk=pk).first()
 
     def get(self, request, pk):
         deal = self.get_deal(request, pk)
@@ -844,6 +869,52 @@ class DealDocumentsView(APIView):
         return Response(DealDocumentSerializer(doc).data, status=201)
 
 
+class DealStateView(APIView):
+    """GET   /api/deals/<pk>/state/  → {checklist_state, form_snapshot, acceptance_date}
+    PATCH /api/deals/<pk>/state/  with any subset. `checklist_state` MERGES by
+    task key so the agent's phone and the TC portal never clobber each other."""
+    permission_classes = [IsAuthenticated]
+
+    def _deal(self, request, pk):
+        return deals_for(request.user).filter(pk=pk).first()
+
+    def _payload(self, deal):
+        return {
+            "checklist_state": deal.checklist_state or {},
+            "form_snapshot": deal.form_snapshot,
+            "acceptance_date": deal.acceptance_date,
+        }
+
+    def get(self, request, pk):
+        deal = self._deal(request, pk)
+        if deal is None:
+            return Response({"error": "Not found."}, status=404)
+        return Response(self._payload(deal))
+
+    def patch(self, request, pk):
+        deal = self._deal(request, pk)
+        if deal is None:
+            return Response({"error": "Not found."}, status=404)
+        fields = []
+        if isinstance(request.data.get("checklist_state"), dict):
+            merged = dict(deal.checklist_state or {})
+            merged.update({str(k): str(v) for k, v in request.data["checklist_state"].items()})
+            deal.checklist_state = merged
+            fields.append("checklist_state")
+        if "form_snapshot" in request.data and isinstance(request.data["form_snapshot"], dict):
+            deal.form_snapshot = request.data["form_snapshot"]
+            fields.append("form_snapshot")
+        if "acceptance_date" in request.data and request.data["acceptance_date"]:
+            from django.utils.dateparse import parse_datetime
+            parsed = parse_datetime(str(request.data["acceptance_date"]))
+            if parsed is not None:
+                deal.acceptance_date = parsed
+                fields.append("acceptance_date")
+        if fields:
+            deal.save(update_fields=fields)
+        return Response(self._payload(deal))
+
+
 class DealArchiveView(APIView):
     """POST /api/deals/<pk>/archive/ with {"archived": true|false}.
     Archived deals leave the active pipeline; delete stays a separate,
@@ -851,7 +922,7 @@ class DealArchiveView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, pk):
-        deal = Deal.objects.filter(pk=pk, agent=request.user).first()
+        deal = deals_for(request.user).filter(pk=pk).first()
         if deal is None:
             return Response({"error": "Not found."}, status=404)
         deal.is_archived = bool(request.data.get("archived", True))
@@ -868,8 +939,8 @@ class DealDetailEndpoint(RetrieveDestroyAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        # SECURITY: agents can only access/delete their OWN deals.
-        return Deal.objects.filter(agent=self.request.user)
+        # SECURITY: own deals for agents; the team's deals for TCs/admins.
+        return deals_for(self.request.user)
 
     def perform_destroy(self, instance):
         # Capture what cleanup needs, then delete the ROW FIRST — the DocuSign
@@ -1084,8 +1155,8 @@ class DistributeExecutedPacketEndpoint(APIView):
 
         if not envelope_id:
             return Response({"error": "Missing envelope_id"}, status=400)
-        # Agents can only distribute packets from their OWN deals.
-        if not Deal.objects.filter(docusign_envelope_id=envelope_id, agent=request.user).exists():
+        # Only packets from deals this user can see (own, or team for TC/admin).
+        if not deals_for(request.user).filter(docusign_envelope_id=envelope_id).exists():
             return Response({"error": "Not found."}, status=404)
         if not property_address:
             return Response({"error": "Missing property_address"}, status=400)

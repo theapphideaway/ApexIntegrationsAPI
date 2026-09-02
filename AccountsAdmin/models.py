@@ -61,8 +61,12 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     """
     The Agent or Admin belonging to an Organization.
     """
+    # Organization == the agent TEAM (we sell to teams, not brokerages).
+    # admin = team admin (may also sell), tc = transaction coordinator
+    # (works every agent's deals), agent = sees own deals only.
     ROLE_CHOICES = (
-        ('admin', 'Organization Admin'),
+        ('admin', 'Team Admin'),
+        ('tc', 'Transaction Coordinator'),
         ('agent', 'Agent'),
     )
 
@@ -142,6 +146,13 @@ class Deal(models.Model):
     fub_synced = models.BooleanField(default=False)
     # Archived deals leave the active pipeline but are kept (and deletable).
     is_archived = models.BooleanField(default=False)
+
+    # Server-side deal state so the agent's phone, the TC portal, and any
+    # other device all see the same thing (this used to live in UserDefaults
+    # on whichever phone sent the deal).
+    checklist_state = models.JSONField(default=dict, blank=True)   # {task_key: status}
+    form_snapshot = models.JSONField(null=True, blank=True)        # the RE-21 as sent
+    acceptance_date = models.DateTimeField(null=True, blank=True)  # set on envelope completion
 
     # State Management
     STATUS_CHOICES = [
