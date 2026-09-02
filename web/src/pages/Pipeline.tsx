@@ -25,9 +25,9 @@ export default function Pipeline({ me }: { me: Me }) {
     const visible = deals.filter((d) => showArchived ? d.is_archived : !d.is_archived)
     if (!teamView || !groupByAgent) return [{ agent: null as string | null, deals: visible }]
     const byAgent = new Map<string, Deal[]>()
-    visible.forEach((d) => byAgent.set(d.agent_name, [...(byAgent.get(d.agent_name) || []), d]))
+    visible.forEach((d) => { const k = me.is_superuser && d.agent_team ? `${d.agent_name} · ${d.agent_team}` : d.agent_name; byAgent.set(k, [...(byAgent.get(k) || []), d]) })
     return Array.from(byAgent.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([agent, deals]) => ({ agent, deals }))
-  }, [deals, showArchived, groupByAgent, teamView])
+  }, [deals, showArchived, groupByAgent, teamView, me.is_superuser])
 
   if (error) return <p className="error">{error}</p>
   if (!deals) return <p className="muted">Loading pipeline…</p>
@@ -35,9 +35,9 @@ export default function Pipeline({ me }: { me: Me }) {
   return (
     <>
       <div className="pagehead">
-        <h1>{teamView ? 'Team Pipeline' : 'My Pipeline'}</h1>
+        <h1>{me.is_superuser ? 'All Deals' : teamView ? 'Team Pipeline' : 'My Pipeline'}</h1>
         <div className="filters">
-          {me.role === 'agent' && <Link to="/new" className="primary btnlink">+ Start from property</Link>}
+          {(me.role === 'agent' || me.is_superuser) && <Link to="/new" className="primary btnlink">+ Start from property</Link>}
           {teamView && <label className="toggle"><input type="checkbox" checked={groupByAgent} onChange={(e) => setGroupByAgent(e.target.checked)} /> Group by agent</label>}
           <label className="toggle"><input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} /> Show archived</label>
         </div>

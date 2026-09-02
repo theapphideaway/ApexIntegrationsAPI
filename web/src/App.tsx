@@ -40,7 +40,7 @@ export default function App() {
           <Link to="/" className="brand">Apex · Deal Desk</Link>
           <Link to="/">Pipeline</Link>
           <Link to="/due">Due Soon</Link>
-          {me.role === 'agent' && <Link to="/new" className="newdeal">+ New Deal</Link>}
+          {(me.role === 'agent' || me.is_superuser) && <Link to="/new" className="newdeal">+ New Deal</Link>}
           {me.is_superuser && <Link to="/dev" className="dev">Dev</Link>}
         </nav>
         <div className="who">
@@ -55,7 +55,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Pipeline me={me} />} />
           <Route path="/due" element={<DueSoon me={me} />} />
-          {me.role === 'agent' && <Route path="/new" element={<NewDeal me={me} />} />}
+          {(me.role === 'agent' || me.is_superuser) && <Route path="/new" element={<NewDeal me={me} />} />}
           {me.is_superuser && <Route path="/dev" element={<Dev me={me} />} />}
           <Route path="/deals/:id" element={<DealPage me={me} />} />
           <Route path="*" element={<Navigate to="/" replace />} />

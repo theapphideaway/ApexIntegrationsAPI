@@ -62,6 +62,9 @@ def is_team_role(user) -> bool:
 
 
 def deals_for(user):
+    # Platform owner / developer: everything, every team.
+    if getattr(user, "is_superuser", False):
+        return Deal.objects.all()
     """Role-based deal visibility: agents see their own deals; TCs and team
     admins see every deal whose agent is on their team."""
     if is_team_role(user) and getattr(user, "organization_id", None):

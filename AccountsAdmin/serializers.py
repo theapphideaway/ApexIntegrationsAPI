@@ -28,6 +28,7 @@ class DealSerializer(serializers.ModelSerializer):
 
     agent_id = serializers.SerializerMethodField()
     agent_name = serializers.SerializerMethodField()
+    agent_team = serializers.SerializerMethodField()
 
     class Meta:
         model = Deal
@@ -35,6 +36,7 @@ class DealSerializer(serializers.ModelSerializer):
             'id',
             'agent_id',
             'agent_name',
+            'agent_team',
             'property_address',
             'buyer_names',
             'status',
@@ -47,6 +49,10 @@ class DealSerializer(serializers.ModelSerializer):
             'form_snapshot',
             'updated_at'
         ]
+
+    def get_agent_team(self, obj):
+        a = getattr(obj, 'agent', None)
+        return a.organization.name if a and a.organization_id else ""
 
     def get_agent_name(self, obj):
         a = getattr(obj, 'agent', None)

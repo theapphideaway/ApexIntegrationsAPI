@@ -23,7 +23,7 @@ export const consoleBus = {
   emit(e: Omit<ConsoleEntry, 'id' | 'at'>) { const entry = { ...e, id: ++seq, at: new Date() }; listeners.forEach((l) => l(entry)) },
 }
 export type Deal = {
-  id: number; agent_id: string; agent_name: string; property_address: string; buyer_names: string
+  id: number; agent_id: string; agent_name: string; agent_team?: string; property_address: string; buyer_names: string
   status: string; status_display: string; docusign_envelope_id: string | null
   draft_pdf_url: string | null; signed_pdf_url: string | null; is_archived: boolean
   acceptance_date: string | null; form_snapshot: Record<string, any> | null; updated_at: string
