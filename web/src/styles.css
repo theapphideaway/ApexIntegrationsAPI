@@ -102,3 +102,6 @@ a.btnlink{background:#0a66c2;color:#fff;border-radius:8px;padding:8px 12px;font-
 
 .banner .row{gap:8px;align-items:center}.banner button.link.inv{color:#fff;text-decoration:underline}
 .doc .fwd{margin-top:6px;font-size:13px;font-weight:600;color:#b45309}
+
+.docbtn{font-size:12px;font-weight:700;color:#0a66c2;background:#e8f0fe;border-radius:6px;padding:3px 8px;margin-left:8px;white-space:nowrap}.docbtn:hover{background:#d7e6fd}
+.task.done .check .docbtn{text-decoration:none}

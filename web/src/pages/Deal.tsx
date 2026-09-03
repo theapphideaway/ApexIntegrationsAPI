@@ -5,6 +5,21 @@ import { PHASES, STATUSES, isDone } from '../checklist'
 import { computeDeadlines, urgency } from '../deadlines'
 import CounterForm from '../components/CounterForm'
 
+/** The document a checklist step produced or works from — same mapping as the iOS app. */
+function documentForTask(key: string, deal: Deal, docs: DealDocument[]): { title: string; url: string } | null {
+  if (['p1.1', 'p1.2', 'p1.3', 'p1.4'].includes(key)) {
+    const url = deal.signed_pdf_url || deal.draft_pdf_url
+    return url ? { title: 'View Packet', url } : null
+  }
+  if (key === 'p3.1' || key === 'p3.2') {
+    const re10s = docs.filter((d) => d.doc_type === 're_10').sort((a, b) => a.sequence - b.sequence)
+    const d = re10s[key === 'p3.1' ? 0 : 1]
+    const url = d && (d.signed_pdf_url || d.pdf_url)
+    return url ? { title: 'View RE-10', url } : null
+  }
+  return null
+}
+
 export default function DealPage({ me }: { me: Me }) {
   const id = Number(useParams().id)
   const [deal, setDeal] = useState<Deal | null>(null)
@@ -98,9 +113,12 @@ export default function DealPage({ me }: { me: Me }) {
                 <h3>{phase.title} <span className="muted">{done}/{phase.tasks.length}</span></h3>
                 {phase.tasks.map((t) => {
                   const s = state.checklist_state[t.key] || 'Not Started'
+                  const doc = documentForTask(t.key, deal, docs)
                   return (
                     <div className={`task ${isDone(s) ? 'done' : ''}`} key={t.key}>
-                      <label className="check"><input type="checkbox" checked={isDone(s)} onChange={(e) => setStatus(t.key, e.target.checked ? 'Complete' : 'Not Started')} /><span>{t.title}</span></label>
+                      <label className="check"><input type="checkbox" checked={isDone(s)} onChange={(e) => setStatus(t.key, e.target.checked ? 'Complete' : 'Not Started')} /><span>{t.title}</span>
+                        {doc && <a className="docbtn" href={doc.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>{doc.title}</a>}
+                      </label>
                       <select value={s} onChange={(e) => setStatus(t.key, e.target.value)}>
                         {STATUSES.map((o) => <option key={o}>{o}</option>)}
                       </select>
