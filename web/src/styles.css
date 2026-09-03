@@ -267,3 +267,21 @@ textarea{resize:vertical}
 :root[data-theme="dark"] .warnbox{color:var(--warn);border-color:#6b4a0a}
 :root[data-theme="dark"] .stat .v{color:var(--ink)}
 :root[data-theme="dark"] .console{border-left-color:var(--line)}
+
+/* API explorer */
+.explorer{display:grid;grid-template-columns:300px 1fr;gap:18px;align-items:start}
+@media(max-width:1000px){.explorer{grid-template-columns:1fr}}
+.eplist{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:10px;position:sticky;top:72px;max-height:calc(100vh - 100px);overflow:auto}
+.eplist input{width:100%;margin-bottom:6px}
+.epgroup .sect{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-4);padding:10px 8px 4px;font-weight:600}
+.ep{display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:none;border:0;border-radius:8px;padding:7px 8px;color:var(--ink-2);font-size:13px}
+.ep:hover{background:var(--hover)}.ep.active{background:var(--accent-soft);color:var(--accent-2);font-weight:600}
+.eptitle{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.epdanger{color:var(--bad);font-weight:800;font-size:12px}
+.method{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;font-weight:700;padding:2px 6px;border-radius:5px;letter-spacing:.03em;min-width:46px;text-align:center}
+.m-get{background:var(--ok-soft);color:var(--ok)}.m-post{background:var(--accent-soft);color:var(--accent-2)}.m-patch{background:var(--warn-soft);color:var(--warn)}.m-delete{background:var(--bad-soft);color:var(--bad)}
+.urlbar{display:flex;align-items:center;gap:10px;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-sm);padding:8px 10px;margin-bottom:12px}
+.urlpath{flex:1;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;overflow:auto;white-space:nowrap;color:var(--ink)}
+.kv{margin:12px 0}.kv label{margin-bottom:8px}.kv input{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px}
+textarea.code{width:100%;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;line-height:1.5;background:var(--code);color:#e2e8f0;border-color:var(--line)}
+.curl summary{cursor:pointer}

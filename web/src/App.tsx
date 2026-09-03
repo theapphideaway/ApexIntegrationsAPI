@@ -52,7 +52,7 @@ export default function App() {
 
   const canCreate = me.role === 'agent' || me.is_superuser
   const isAdmin = me.role === 'admin' || me.is_superuser
-  const crumb = location.pathname.startsWith('/deals/') ? 'Deal' : location.pathname === '/due' ? 'Due Soon' : location.pathname === '/new' ? 'New Deal' : location.pathname === '/team' ? 'Team' : location.pathname === '/dev' ? 'Developer' : 'Pipeline'
+  const crumb = location.pathname.startsWith('/deals/') ? 'Deal' : location.pathname === '/due' ? 'Due Soon' : location.pathname === '/new' ? 'New Deal' : location.pathname === '/team' ? 'Team' : location.pathname.startsWith('/dev') ? 'Developer' : 'Pipeline'
 
   return (
     <div className="app">
@@ -96,6 +96,7 @@ export default function App() {
               {canCreate && <Route path="/new" element={<NewDeal me={me} />} />}
               {isAdmin && <Route path="/team" element={<TeamPage me={me} />} />}
               {me.is_superuser && <Route path="/dev" element={<Dev me={me} />} />}
+              {me.is_superuser && <Route path="/dev/api" element={<Dev me={me} />} />}
               <Route path="/deals/:id" element={<DealPage me={me} />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

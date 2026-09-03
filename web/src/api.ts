@@ -79,6 +79,25 @@ async function request<T>(path: string, init: RequestInit = {}, retry = true): P
   return parsed as T
 }
 
+/** Raw authenticated fetch (API explorer): adds the bearer token, refreshes once on 401, logs to the console bus, returns the Response untouched. */
+export async function authFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const started = performance.now()
+  const doFetch = () => {
+    const headers = new Headers(init.headers || {})
+    if (auth.access) headers.set('Authorization', `Bearer ${auth.access}`)
+    return fetch(path, { ...init, headers })
+  }
+  let r = await doFetch()
+  if (r.status === 401 && (await refresh())) r = await doFetch()
+  let reqBody: unknown = undefined
+  if (typeof init.body === 'string') { try { reqBody = JSON.parse(init.body) } catch { reqBody = init.body } }
+  const ct = r.headers.get('content-type') || ''
+  let logged: unknown = `<${ct}>`
+  if (ct.includes('json')) { try { logged = await r.clone().json() } catch { /* ignore */ } }
+  consoleBus.emit({ method: (init.method || 'GET').toUpperCase(), path, status: r.status, ms: performance.now() - started, request: reqBody, response: logged })
+  return r
+}
+
 /** Binary-returning request (PDF preview). Same auth/refresh rules. */
 export async function requestBlob(path: string, body: unknown): Promise<Blob> {
   const started = performance.now()

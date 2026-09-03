@@ -1,9 +1,26 @@
 import { useEffect, useState } from 'react'
 import { api, type DevSettings, type Team, type PortalUser, type Me } from '../api'
+import { Link, useLocation } from 'react-router-dom'
+import ApiExplorer from './ApiExplorer'
 
 const ROLES = [['agent', 'Agent'], ['tc', 'Transaction Coordinator'], ['admin', 'Team Admin']] as const
 
 export default function Dev({ me }: { me: Me }) {
+  const location = useLocation()
+  const tab = location.pathname.endsWith('/api') ? 'api' : 'overview'
+  return (
+    <>
+      <div className="pagehead"><div><h1>Developer Portal</h1><p className="sub">{me.email}</p></div></div>
+      <div className="tabs">
+        <Link className={`tab ${tab === 'overview' ? 'active' : ''}`} to="/dev">Overview</Link>
+        <Link className={`tab ${tab === 'api' ? 'active' : ''}`} to="/dev/api">API Explorer</Link>
+      </div>
+      {tab === 'api' ? <ApiExplorer me={me} /> : <DevOverview me={me} />}
+    </>
+  )
+}
+
+function DevOverview({ me }: { me: Me }) {
   const [cfg, setCfg] = useState<DevSettings | null>(null)
   const [teams, setTeams] = useState<Team[]>([])
   const [users, setUsers] = useState<PortalUser[]>([])
@@ -29,7 +46,7 @@ export default function Dev({ me }: { me: Me }) {
 
   return (
     <>
-      <div className="pagehead"><h1>Developer Portal</h1><span className="muted small">{me.email} · DB: {cfg.server.db_engine} · DEBUG {String(cfg.server.debug)}</span></div>
+      <p className="muted small" style={{ marginBottom: 12 }}>DB: {cfg.server.db_engine} · DEBUG {String(cfg.server.debug)}</p>
       {error && <p className="error">{error}</p>}
 
       <section className="card" style={{ marginBottom: 20 }}>
