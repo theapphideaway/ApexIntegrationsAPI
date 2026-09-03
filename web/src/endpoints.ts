@@ -60,6 +60,12 @@ export function catalog(pf: Prefill): Endpoint[] {
     { id: 'fub-webhook', group: 'Follow Up Boss', method: 'POST', path: '/api/auth/fub/webhook/:token/', title: 'FUB event delivery (simulate)', noAuth: true, params: { token: pf.fubToken || '<signed-account-token>' }, body: { eventId: 'test', eventCreated: new Date().toISOString(), event: 'notesCreated', resourceIds: [1], uri: 'https://api.followupboss.com/v1/notes/1' } },
     { id: 'fub-send', group: 'Follow Up Boss', method: 'POST', path: '/api/auth/fub/send/', title: 'Send a document note to FUB', body: { buyer_name: 'John Doe', buyer_email: pf.email, subject: 'Test from API explorer', body_html: '<p>Hello from Docuflow</p>' }, danger: 'Posts a note to FUB.' },
 
+    // ---- Defaults ----
+    { id: 'defaults', group: 'Defaults', method: 'GET', path: '/api/defaults/', title: 'My effective defaults (team ⊕ mine ⊕ locked)' },
+    { id: 'defaults-mine', group: 'Defaults', method: 'PATCH', path: '/api/defaults/', title: 'Save my defaults', body: { mine: { inspectionPeriod: 10, titleCompany: 'Pioneer Title Company' } } },
+    { id: 'team-defaults', group: 'Defaults', method: 'GET', path: '/api/team/defaults/', title: 'Team defaults (admin)' },
+    { id: 'team-defaults-patch', group: 'Defaults', method: 'PATCH', path: '/api/team/defaults/', title: 'Set team defaults (admin; null removes)', body: { defaults: { cancellationPercentage: '$1,000', titleCompanyName: 'Pioneer Title Company', titleEmail: 'orders@pioneertitle.com' } }, danger: 'Locks these values for every agent on the team.' },
+
     // ---- Team ----
     { id: 'team', group: 'Team', method: 'GET', path: '/api/team/', title: 'My team + members', query: { team: pf.teamId } },
     { id: 'team-rename', group: 'Team', method: 'PATCH', path: '/api/team/', title: 'Rename team', body: { name: 'REAL BROKER LLC' } },

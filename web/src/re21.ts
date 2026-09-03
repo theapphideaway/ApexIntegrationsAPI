@@ -194,3 +194,31 @@ export function buildPacket(form: RE21, re14: Record<string, string>, agency: Re
   if (forms.agency) root.agencyDisclosure = merged(agency)
   return root
 }
+
+
+/** Deal-specific facts are never defaults (mirrors the server's NEVER_DEFAULT). */
+export const NEVER_DEFAULT = new Set(['propertyAddress', 'propertyCity', 'propertyCounty', 'propertyState', 'propertyZip', 'parcelNumber', 'legalDescription', 'buyerName', 'buyerPhone', 'buyerEmail', 'buyerNameTwo', 'buyerPhoneTwo', 'buyerEmailTwo', 'sellerName', 'offerPrice', 'earnestMoney', 'closingDate', 'offerExpirationDate', 'firstLoanAmount', 'secondLoanAmount', 'extractionTimestamp', 'confidenceScores', 'contingencies', 'hoaDues', 'hoaSetupFee', 'hoaTransferFee', 'sellerConcessionAmount', 'prorationDate'])
+
+/** The RE-21 sections restricted to fields that make sense as team/agent defaults. */
+export const DEFAULT_SECTIONS: Section[] = SECTIONS
+  .map((s) => ({ ...s, fields: s.fields.filter((f) => !NEVER_DEFAULT.has(f.key) && !f.required) }))
+  .filter((s) => s.fields.length > 0)
+
+export const CONTACT_FIELDS: Field[] = [
+  t('titleCompanyName', 'Title company', { group: 'Title / Escrow' }), t('titleEmail', 'Title email', { type: 'email', group: 'Title / Escrow' }), t('titlePhone', 'Title phone', { type: 'phone', group: 'Title / Escrow' }),
+  t('lenderCompanyName', 'Lender', { group: 'Lender' }), t('lenderEmail', 'Lender email', { type: 'email', group: 'Lender' }), t('lenderPhone', 'Lender phone', { type: 'phone', group: 'Lender' }),
+]
+export const FEE_FIELDS: Field[] = [
+  t('cancellationPercentage', 'Cancellation fee (RE-14)', { group: 'Buyer Representation (RE-14)' }), t('compensationFlatFee', 'Transaction fee ($)', { group: 'Buyer Representation (RE-14)' }), t('compensationPercentage', 'Compensation (%)', { group: 'Buyer Representation (RE-14)' }),
+  sel('agencyType', 'Agency type', [['dual', 'Limited Dual'], ['single', 'Single']], { group: 'Buyer Representation (RE-14)' }),
+]
+
+/** Overlay saved defaults onto a form: only fills fields the form left empty. */
+export function applyDefaults(form: RE21, defaults: Record<string, unknown>): RE21 {
+  const f = { ...form }
+  for (const [k, v] of Object.entries(defaults)) {
+    if (NEVER_DEFAULT.has(k) || v === null || v === undefined || v === '') continue
+    if (f[k] === undefined || f[k] === null || f[k] === '') f[k] = v
+  }
+  return f
+}

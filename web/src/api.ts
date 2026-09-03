@@ -129,12 +129,17 @@ export const api = {
   fubRegisterWebhooks: (userId?: string) => request<Record<string, string>>('/api/auth/fub/webhooks/', { method: 'POST', body: JSON.stringify(userId ? { user_id: userId } : {}) }),
   sendDocument: (id: number, body: { doc_type: string; fields: Record<string, unknown>; buyers?: { name: string; email: string }[]; resulting_terms?: Record<string, unknown>; source_document_id?: number }) =>
     request<DealDocument>(`/api/deals/${id}/documents/send/`, { method: 'POST', body: JSON.stringify(body) }),
+  // ---- Contract defaults ----
+  defaults: () => request<{ team: Record<string, unknown>; mine: Record<string, unknown>; effective: Record<string, unknown>; locked: string[] }>('/api/defaults/'),
+  patchMyDefaults: (mine: Record<string, unknown>) => request<{ team: Record<string, unknown>; mine: Record<string, unknown>; effective: Record<string, unknown>; locked: string[] }>('/api/defaults/', { method: 'PATCH', body: JSON.stringify({ mine }) }),
   // ---- Team admin (role admin; own team only) ----
   team: {
     get: (teamId?: string) => request<{ team: Team; members: PortalUser[]; deal_count: number }>(`/api/team/${teamId ? `?team=${teamId}` : ''}`),
     rename: (name: string) => request<Team>('/api/team/', { method: 'PATCH', body: JSON.stringify({ name }) }),
     invite: (body: { email: string; first_name: string; last_name: string; phone_number?: string; role: string }) => request<PortalUser>('/api/team/members/', { method: 'POST', body: JSON.stringify(body) }),
     patchMember: (id: string, body: Record<string, unknown>) => request<PortalUser>(`/api/team/members/${id}/`, { method: 'PATCH', body: JSON.stringify(body) }),
+    defaults: () => request<{ defaults: Record<string, unknown>; locked: string[] }>('/api/team/defaults/'),
+    patchDefaults: (defaults: Record<string, unknown>) => request<{ defaults: Record<string, unknown>; locked: string[] }>('/api/team/defaults/', { method: 'PATCH', body: JSON.stringify({ defaults }) }),
   },
   // ---- Developer portal (superuser only) ----
   dev: {

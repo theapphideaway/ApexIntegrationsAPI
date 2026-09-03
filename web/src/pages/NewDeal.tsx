@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, type Me } from '../api'
 import { toListing, money, type Listing } from '../mls'
-import { SECTIONS, RE14_FIELDS, AGENCY_FIELDS, defaultRE21, defaultRE14, defaultAgency, prefillFromListing, applyLoanTypePresets, missingRequired, buildPacket, type Field, type RE21, type Forms } from '../re21'
+import { SECTIONS, RE14_FIELDS, AGENCY_FIELDS, defaultRE21, defaultRE14, defaultAgency, prefillFromListing, applyLoanTypePresets, applyDefaults, missingRequired, buildPacket, type Field, type RE21, type Forms } from '../re21'
 
 type Step = 'search' | 'review' | 'preview'
 
@@ -24,6 +24,8 @@ export default function NewDeal({ me }: { me: Me }) {
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const searchBox = useRef<HTMLInputElement>(null)
+  const [savedDefaults, setSavedDefaults] = useState<{ effective: Record<string, unknown>; locked: string[] }>({ effective: {}, locked: [] })
+  useEffect(() => { api.defaults().then((d) => setSavedDefaults({ effective: d.effective, locked: d.locked })).catch(() => {}) }, [])
 
   useEffect(() => () => { if (pdfUrl) URL.revokeObjectURL(pdfUrl) }, [pdfUrl])
 
@@ -45,9 +47,13 @@ export default function NewDeal({ me }: { me: Me }) {
 
   function choose(l: Listing) {
     setListing(l)
-    const f = applyLoanTypePresets(prefillFromListing(defaultRE21(), l))
+    // Saved defaults first (team wins, then the agent's own), then the MLS, then presets.
+    const f = applyLoanTypePresets(prefillFromListing(applyDefaults(defaultRE21(), savedDefaults.effective), l))
     setForm(f)
-    setRe14((r) => ({ ...r, searchCity: l.city, searchCounty: l.countyOrParish || '', searchState: l.stateOrProvince || 'Idaho' }))
+    const eff = savedDefaults.effective as Record<string, string>
+    setRe14((r) => ({ ...r, searchCity: l.city, searchCounty: l.countyOrParish || '', searchState: l.stateOrProvince || 'Idaho',
+      cancellationPercentage: eff.cancellationPercentage || r.cancellationPercentage, compensationFlatFee: eff.compensationFlatFee || r.compensationFlatFee,
+      compensationPercentage: eff.compensationPercentage || r.compensationPercentage, agencyType: eff.agencyType || r.agencyType, propertyType: eff.propertyType || r.propertyType }))
     setStep('review'); window.scrollTo(0, 0)
   }
 
@@ -165,13 +171,13 @@ export default function NewDeal({ me }: { me: Me }) {
               <span>{isOpen ? '▾' : '▸'} {s.title}</span>
               {miss > 0 ? <span className="status bad">{miss} required</span> : <span className="status ok">complete</span>}
             </button>
-            {isOpen && <FieldGrid fields={s.fields} values={form} onChange={set} showMissing={showMissing} />}
+            {isOpen && <FieldGrid fields={s.fields} values={form} onChange={set} showMissing={showMissing} locked={savedDefaults.locked} />}
           </section>
         )
       })}
       {tab === 're14' && (
         <section className="card section"><p className="muted small">Buyer Representation Agreement. Buyers, agent and property come from the RE-21; these are only what the RE-14 adds.</p>
-          <FieldGrid fields={RE14_FIELDS} values={re14} onChange={(k, v) => setRe14((r) => ({ ...r, [k]: String(v ?? '') }))} showMissing={false} /></section>
+          <FieldGrid fields={RE14_FIELDS} values={re14} onChange={(k, v) => setRe14((r) => ({ ...r, [k]: String(v ?? '') }))} showMissing={false} locked={savedDefaults.locked} /></section>
       )}
       {tab === 'agency' && (
         <section className="card section"><p className="muted small">Leave blank to use your brokerage profile on file.</p>
@@ -190,7 +196,7 @@ export default function NewDeal({ me }: { me: Me }) {
   )
 }
 
-function FieldGrid({ fields, values, onChange, showMissing }: { fields: Field[]; values: Record<string, unknown>; onChange: (k: string, v: unknown) => void; showMissing: boolean }) {
+export function FieldGrid({ fields, values, onChange, showMissing, locked = [] }: { fields: Field[]; values: Record<string, unknown>; onChange: (k: string, v: unknown) => void; showMissing: boolean; locked?: string[] }) {
   const groups: { name: string | undefined; fields: Field[] }[] = []
   for (const f of fields) { const g = groups[groups.length - 1]; if (g && g.name === f.group) g.fields.push(f); else groups.push({ name: f.group, fields: [f] }) }
   return (
@@ -198,16 +204,17 @@ function FieldGrid({ fields, values, onChange, showMissing }: { fields: Field[];
       {groups.map((g, i) => (
         <div key={i} className={g.name ? 'fgroup' : 'fplain'}>
           {g.name && <div className="fgname">{g.name}</div>}
-          <div className="fgrid">{g.fields.map((f) => <FieldInput key={f.key} f={f} value={values[f.key]} onChange={(v) => onChange(f.key, v)} invalid={showMissing && !!f.required && (values[f.key] === undefined || values[f.key] === null || values[f.key] === '')} />)}</div>
+          <div className="fgrid">{g.fields.map((f) => <FieldInput key={f.key} f={f} value={values[f.key]} onChange={(v) => onChange(f.key, v)} invalid={showMissing && !!f.required && (values[f.key] === undefined || values[f.key] === null || values[f.key] === '')} locked={locked.includes(f.key)} />)}</div>
         </div>
       ))}
     </>
   )
 }
 
-function FieldInput({ f, value, onChange, invalid }: { f: Field; value: unknown; onChange: (v: unknown) => void; invalid: boolean }) {
+export function FieldInput({ f, value, onChange, invalid, locked = false }: { f: Field; value: unknown; onChange: (v: unknown) => void; invalid: boolean; locked?: boolean }) {
   const cls = invalid ? 'invalid' : ''
-  const label = <>{f.label}{f.required && <span className="req"> *</span>}</>
+  const label = <>{f.label}{f.required && <span className="req"> *</span>}{locked && <span className="lock" title="Set by your team lead">🔒 team</span>}</>
+  if (locked) return <label className={`lockedfield ${f.type === 'textarea' ? 'wide' : ''}`}>{label}<div className="lockedval">{f.type === 'toggle' ? (value ? 'Yes' : 'No') : f.type === 'select' || f.type === 'multiselect' ? String(value ?? '').split(',').map((v) => (f.options || []).find(([k]) => k === v.trim())?.[1] || v).join(', ') : String(value ?? '—')}</div></label>
   switch (f.type) {
     case 'multiselect': {
       const chosen = new Set(String(value ?? '').split(',').map((v) => v.trim()).filter(Boolean))

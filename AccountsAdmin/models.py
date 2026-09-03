@@ -20,6 +20,9 @@ class Organization(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=255)
     plan_type = models.CharField(max_length=20, choices=PLAN_CHOICES, default='basic')
+    # Team-wide contract defaults set by the team lead on the web. Any key
+    # present here is LOCKED for agents (they can't override it in the app).
+    defaults = models.JSONField(default=dict, blank=True)
     is_active = models.BooleanField(default=True)
 
     # Metadata
@@ -97,6 +100,8 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     # Per-user DocuSign environment: True = production account (only effective
     # when the production master switch is on and prod creds exist); False = demo.
     docusign_production = models.BooleanField(default=False)
+    # The agent's own contract defaults (synced from the app / web).
+    defaults = models.JSONField(default=dict, blank=True)
     fub_access_token = models.TextField(blank=True, null=True)
     fub_refresh_token = models.TextField(blank=True, null=True)
     # The FUB account this user's tokens belong to (a team shares one FUB

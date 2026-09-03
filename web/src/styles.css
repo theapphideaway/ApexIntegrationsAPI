@@ -285,3 +285,6 @@ textarea{resize:vertical}
 .kv{margin:12px 0}.kv label{margin-bottom:8px}.kv input{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px}
 textarea.code{width:100%;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;line-height:1.5;background:var(--code);color:#e2e8f0;border-color:var(--line)}
 .curl summary{cursor:pointer}
+
+.lock{font-size:10.5px;font-weight:600;color:var(--warn);margin-left:6px}
+.lockedfield .lockedval{padding:9px 11px;border:1px dashed var(--line);border-radius:var(--r-sm);background:var(--surface-2);color:var(--ink-2);font-size:13.5px;min-height:38px}

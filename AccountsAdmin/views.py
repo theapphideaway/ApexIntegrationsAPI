@@ -23,6 +23,7 @@ import requests
 
 from .docusign_service import DocuSignService
 from . import fub_service
+from . import defaults_service
 from .pdf_service import PDFGenerationService, DocumentType
 # Create your views here.
 
@@ -383,6 +384,7 @@ class DocumentPreviewEndpoint(APIView):
         form_data = request.data
         # Stamp the agent/brokerage from the DB when a valid token is present.
         apply_agent_identity(form_data, request.user)
+        defaults_service.apply_defaults(form_data, request.user)
 
         try:
             # 2. Initialize the service with the specific document type
@@ -459,6 +461,7 @@ class OnboardingBundlePreviewEndpoint(APIView):
 
             for doc_type, data in documents_to_generate:
                 apply_agent_identity(data, request.user)
+                defaults_service.apply_defaults(data, request.user)
                 pdf_service = PDFGenerationService(doc_type=doc_type)
                 pdf_bytes = pdf_service.generate_pdf(data)
 
@@ -538,6 +541,7 @@ class SendOnboardingBundleEndpoint(APIView):
 
         for doc_payload in bundled_data.values():
             apply_agent_identity(doc_payload, owner)
+            defaults_service.apply_defaults(doc_payload, owner)
 
         try:
             # 3. Call your multi-document bundle method
@@ -1066,6 +1070,26 @@ class DealDocumentSendView(APIView):
             .update(status='signed' if fields.get("isSellerCounter", True) else 'rejected')
 
         return Response(DealDocumentSerializer(doc).data, status=201)
+
+
+class ContractDefaultsView(APIView):
+    """GET  /api/defaults/  → {team, mine, effective, locked}
+    PATCH /api/defaults/ {mine: {...}} — the agent's own defaults (replaces).
+    Keys the team locked are ignored; deal-specific keys are never stored."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        return Response(defaults_service.bundle(request.user))
+
+    def patch(self, request):
+        mine = request.data.get("mine")
+        if not isinstance(mine, dict):
+            return Response({"error": "mine must be an object"}, status=400)
+        locked = set(defaults_service.locked_keys(request.user))
+        cleaned = {k: v for k, v in mine.items() if k not in locked and k not in defaults_service.NEVER_DEFAULT}
+        request.user.defaults = cleaned
+        request.user.save(update_fields=["defaults"])
+        return Response(defaults_service.bundle(request.user))
 
 
 class DealStateView(APIView):

@@ -24,7 +24,7 @@ from django.urls import re_path
 from django.views.static import serve as static_serve
 from AccountsAdmin import dev_views, team_views
 from AccountsAdmin.views import (
-    portal_index, DealArchiveView, DealDocumentsView, DealDocumentDetailView, DealDocumentSendView, DealStateView, DealActivityView,
+    portal_index, DealArchiveView, DealDocumentsView, DealDocumentDetailView, DealDocumentSendView, DealStateView, DealActivityView, ContractDefaultsView,
     docusign_webhook,
     RE21ContractStatusEndpoint,
     AgentDealsListCreateView,
@@ -61,7 +61,9 @@ urlpatterns = [
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
 
     # Team-admin portal API (role admin; scoped to the admin's own team).
+    path('api/defaults/', ContractDefaultsView.as_view(), name='contract-defaults'),
     path('api/team/', team_views.TeamView.as_view(), name='team'),
+    path('api/team/defaults/', team_views.TeamDefaultsView.as_view(), name='team-defaults'),
     path('api/team/members/', team_views.TeamMembersView.as_view(), name='team-members'),
     path('api/team/members/<uuid:pk>/', team_views.TeamMemberDetailView.as_view(), name='team-member-detail'),
 

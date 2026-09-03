@@ -10,6 +10,7 @@ from rest_framework.views import APIView
 
 from .models import CustomUser, Organization, Deal
 from .serializers import CustomUserSerializer, OrganizationSerializer
+from . import defaults_service
 
 
 class IsTeamAdmin(IsAuthenticated):
@@ -137,3 +138,35 @@ class TeamMemberDetailView(APIView):
             user.is_active = bool(d["is_active"])
         user.save()
         return Response(member_payload(user))
+
+
+class TeamDefaultsView(APIView):
+    """GET   /api/team/defaults/ → {defaults}
+    PATCH /api/team/defaults/ {defaults: {key: value | null}} — merge; null removes
+    (and unlocks) a key. Every key present is locked for the team's agents."""
+    permission_classes = [IsTeamAdmin]
+
+    def get(self, request):
+        org = team_for(request)
+        if org is None:
+            return Response({"error": "You are not on a team."}, status=400)
+        return Response({"defaults": org.defaults or {}, "locked": sorted((org.defaults or {}).keys())})
+
+    def patch(self, request):
+        org = team_for(request)
+        if org is None:
+            return Response({"error": "You are not on a team."}, status=400)
+        updates = request.data.get("defaults")
+        if not isinstance(updates, dict):
+            return Response({"error": "defaults must be an object"}, status=400)
+        current = dict(org.defaults or {})
+        for k, v in updates.items():
+            if k in defaults_service.NEVER_DEFAULT:
+                continue
+            if v in (None, "", [], {}):
+                current.pop(k, None)
+            else:
+                current[k] = v
+        org.defaults = current
+        org.save(update_fields=["defaults"])
+        return Response({"defaults": current, "locked": sorted(current.keys())})

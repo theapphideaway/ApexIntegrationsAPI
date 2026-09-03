@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api, type Me, type PortalUser, type Team } from '../api'
+import { DEFAULT_SECTIONS, CONTACT_FIELDS, FEE_FIELDS } from '../re21'
+import { FieldGrid } from './NewDeal'
 
 const ROLES = [['agent', 'Agent'], ['tc', 'Transaction Coordinator'], ['admin', 'Team Admin']] as const
 const ROLE_LABEL: Record<string, string> = Object.fromEntries(ROLES)
@@ -13,6 +15,10 @@ export default function TeamPage({ me }: { me: Me }) {
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const [invite, setInvite] = useState({ email: '', first_name: '', last_name: '', phone_number: '', role: 'agent' })
+  const [defaults, setDefaults] = useState<Record<string, unknown>>({})
+  const [defaultsDirty, setDefaultsDirty] = useState<Record<string, unknown>>({})
+  const [openSec, setOpenSec] = useState<Record<string, boolean>>({ contacts: true, fees: true })
+  useEffect(() => { api.team.defaults().then((d) => setDefaults(d.defaults)).catch(() => {}) }, [])
 
   const load = () => api.team.get().then((r) => { setTeam(r.team); setMembers(r.members); setDealCount(r.deal_count) }).catch((e) => setError(String(e)))
   useEffect(() => { load() }, [])
@@ -60,6 +66,26 @@ export default function TeamPage({ me }: { me: Me }) {
               <td><input type="checkbox" checked={u.is_active} disabled={busy || u.id === me.id || u.is_superuser} onChange={(e) => { if (!e.target.checked && !confirm(`Deactivate ${u.email}? They won\'t be able to log in; their deals stay on the team.`)) return; run(() => api.team.patchMember(u.id, { is_active: e.target.checked })) }} /></td>
             </tr>))}</tbody>
         </table>
+      </section>
+
+      <section className="card" style={{ marginBottom: 20 }}>
+        <div className="cardhead"><div><h2>Team defaults</h2><p className="muted small" style={{ margin: 0 }}>Anything you set here is used on every packet the team sends and is <b>locked</b> — agents can't change it in the app. Leave a field blank to let each agent set their own.</p></div>
+          <div className="row"><span className="muted small">{Object.keys(defaults).length} locked</span><button className="primary" disabled={busy || Object.keys(defaultsDirty).length === 0} onClick={() => run(async () => { const r = await api.team.patchDefaults(defaultsDirty); setDefaults(r.defaults); setDefaultsDirty({}) }, 'Team defaults saved')}>Save {Object.keys(defaultsDirty).length ? `(${Object.keys(defaultsDirty).length})` : ''}</button></div></div>
+        {(() => {
+          const values = { ...defaults, ...defaultsDirty }
+          const set = (k: string, v: unknown) => setDefaultsDirty((d) => ({ ...d, [k]: v === undefined ? null : v }))
+          const secs = [{ id: 'contacts', title: 'Title & lender contacts', fields: CONTACT_FIELDS }, { id: 'fees', title: 'Fees & agency (RE-14)', fields: FEE_FIELDS }, ...DEFAULT_SECTIONS]
+          return secs.map((sec) => {
+            const setCount = sec.fields.filter((f) => values[f.key] !== undefined && values[f.key] !== null && values[f.key] !== '').length
+            const isOpen = openSec[sec.id] ?? false
+            return (
+              <div className="card section" key={sec.id}>
+                <button type="button" className="sechead" onClick={() => setOpenSec((o) => ({ ...o, [sec.id]: !isOpen }))}><span>{isOpen ? '▾' : '▸'} {sec.title}</span>{setCount > 0 ? <span className="status ok">{setCount} locked</span> : <span className="muted small">none set</span>}</button>
+                {isOpen && <FieldGrid fields={sec.fields} values={values} onChange={set} showMissing={false} />}
+              </div>
+            )
+          })
+        })()}
       </section>
 
       <section className="card">
