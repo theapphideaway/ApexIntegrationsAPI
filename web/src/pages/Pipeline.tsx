@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, type Deal, type Me } from '../api'
 import { computeDeadlines, urgency } from '../deadlines'
+import { initials } from '../App'
 
 const STATUS_CLASS: Record<string, string> = { fully_executed: 'ok', out_for_signature: 'warn', cancelled: 'bad' }
 
@@ -30,41 +31,61 @@ export default function Pipeline({ me }: { me: Me }) {
   }, [deals, showArchived, groupByAgent, teamView, me.is_superuser])
 
   if (error) return <p className="error">{error}</p>
-  if (!deals) return <p className="muted">Loading pipeline…</p>
+  if (!deals) return <div className="deals">{[0, 1, 2].map((i) => <div className="dealrow" key={i}><div className="skeleton" style={{ width: '60%' }} /><div className="skeleton" style={{ width: '40%' }} /><div className="skeleton" /><div className="skeleton" /><div className="skeleton" /><div /></div>)}</div>
+
+  const active = deals.filter((d) => !d.is_archived)
+  const awaiting = active.filter((d) => d.status === 'out_for_signature').length
+  const executed = active.filter((d) => d.status === 'fully_executed').length
+  const soon = active.flatMap(computeDeadlines).filter((x) => urgency(x.date) === 'soon').length
+  const overdue = active.flatMap(computeDeadlines).filter((x) => urgency(x.date) === 'overdue').length
 
   return (
     <>
       <div className="pagehead">
-        <h1>{me.is_superuser ? 'All Deals' : teamView ? 'Team Pipeline' : 'My Pipeline'}</h1>
+        <div>
+          <h1>{me.is_superuser ? 'All Deals' : teamView ? 'Team Pipeline' : 'My Pipeline'}</h1>
+          <p className="sub">{active.length} active deal{active.length === 1 ? '' : 's'}{teamView ? ' across the team' : ''}</p>
+        </div>
         <div className="filters">
-          {(me.role === 'agent' || me.is_superuser) && <Link to="/new" className="primary btnlink">+ Start from property</Link>}
           {teamView && <label className="toggle"><input type="checkbox" checked={groupByAgent} onChange={(e) => setGroupByAgent(e.target.checked)} /> Group by agent</label>}
-          <label className="toggle"><input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} /> Show archived</label>
+          <label className="toggle"><input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} /> Archived</label>
+          {(me.role === 'agent' || me.is_superuser) && <Link to="/new" className="btnlink">+ Start from property</Link>}
         </div>
       </div>
-      {groups.every((g) => g.deals.length === 0) && <p className="muted">{showArchived ? 'No archived deals.' : 'No active deals yet.'}</p>}
+
+      {!showArchived && (
+        <div className="stats">
+          <div className="stat"><div className="k">Active</div><div className="v">{active.length}</div></div>
+          <div className="stat"><div className="k">Awaiting signature</div><div className="v">{awaiting}</div></div>
+          <div className="stat"><div className="k">Under contract</div><div className="v">{executed}</div></div>
+          <div className="stat"><div className="k">Due in 3 days</div><div className="v" style={{ color: soon ? 'var(--warn)' : undefined }}>{soon}</div></div>
+          <div className="stat"><div className="k">Overdue</div><div className="v" style={{ color: overdue ? 'var(--bad)' : undefined }}>{overdue}</div></div>
+        </div>
+      )}
+
+      {groups.every((g) => g.deals.length === 0) && (
+        <div className="empty"><b>{showArchived ? 'No archived deals' : 'No active deals yet'}</b>{!showArchived && (me.role === 'agent' || me.is_superuser) ? <span>Start one from an MLS listing and the packet is prefilled for you.</span> : <span>Deals appear here as agents send packets.</span>}</div>
+      )}
+
       {groups.map((g) => (
         <div key={g.agent ?? 'all'} className="group">
-          {g.agent && <h2 className="grouphead">{g.agent} <span className="muted">· {g.deals.length} deal{g.deals.length === 1 ? '' : 's'}</span></h2>}
-          <table className="table">
-            <thead><tr><th>Property</th><th>Buyer(s)</th>{teamView && !groupByAgent && <th>Agent</th>}<th>Status</th><th>Packet</th><th>Next deadline</th><th></th></tr></thead>
-            <tbody>
-              {g.deals.map((d) => {
-                const nd = nextDeadline(d)
-                return (
-                  <tr key={d.id}>
-                    <td><Link to={`/deals/${d.id}`}><b>{d.property_address}</b></Link></td>
-                    <td>{d.buyer_names}</td>
-                    {teamView && !groupByAgent && <td>{d.agent_name}</td>}
-                    <td><span className={`status ${STATUS_CLASS[d.status] || ''}`}>{d.status_display}</span></td>
-                    <td>{d.signed_pdf_url ? <a className="docbtn" href={d.signed_pdf_url} target="_blank" rel="noreferrer">Executed packet</a> : d.draft_pdf_url ? <a className="docbtn" href={d.draft_pdf_url} target="_blank" rel="noreferrer">Offer packet</a> : <span className="muted">—</span>}</td>
-                    <td>{nd ? <><span className={`status ${urgency(nd.date) === 'soon' ? 'warn' : ''}`}>{nd.date.toLocaleDateString()}</span> <span className="muted small">{nd.title}</span></> : <span className="muted">—</span>}</td>
-                    <td className="right"><button className="link" onClick={() => api.setArchived(d.id, !d.is_archived).then(load)}>{d.is_archived ? 'Restore' : 'Archive'}</button></td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+          {g.agent && <h2 className="grouphead"><span className="avatar sm" style={{ background: '#e2e8f0', color: '#334155', border: 0 }}>{initials(...(g.agent.split(' · ')[0].split(' ') as [string, string]))}</span>{g.agent} <span className="muted">· {g.deals.length} deal{g.deals.length === 1 ? '' : 's'}</span></h2>}
+          <div className="deals">
+            {g.deals.map((d) => {
+              const nd = nextDeadline(d)
+              const u = nd ? urgency(nd.date) : 'later'
+              return (
+                <div className="dealrow" key={d.id}>
+                  <div className="col"><Link to={`/deals/${d.id}`} className="addr">{d.property_address}</Link><div className="meta">{d.buyer_names}{teamView && !groupByAgent ? ` · ${d.agent_name}` : ''}</div></div>
+                  <div className="col"><div className="lbl">Status</div><span className={`status ${STATUS_CLASS[d.status] || ''}`}>{d.status_display}</span></div>
+                  <div className="col"><div className="lbl">Packet</div>{d.signed_pdf_url ? <a className="docbtn" style={{ marginLeft: 0 }} href={d.signed_pdf_url} target="_blank" rel="noreferrer">Executed</a> : d.draft_pdf_url ? <a className="docbtn" style={{ marginLeft: 0 }} href={d.draft_pdf_url} target="_blank" rel="noreferrer">Offer</a> : <span className="muted">—</span>}</div>
+                  <div className="col"><div className="lbl">Next deadline</div>{nd ? <><span className={`status ${u === 'soon' ? 'warn' : ''}`}>{nd.date.toLocaleDateString()}</span><div className="meta">{nd.title}</div></> : <span className="muted">—</span>}</div>
+                  <div className="col"><div className="lbl">Updated</div><span className="muted">{new Date(d.updated_at).toLocaleDateString()}</span></div>
+                  <div className="col right"><button className="link" onClick={() => api.setArchived(d.id, !d.is_archived).then(load)}>{d.is_archived ? 'Restore' : 'Archive'}</button></div>
+                </div>
+              )
+            })}
+          </div>
         </div>
       ))}
     </>

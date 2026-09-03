@@ -80,9 +80,21 @@ export default function NewDeal({ me }: { me: Me }) {
 
   const selectedCount = Object.values(forms).filter(Boolean).length
 
+  const stepper = (
+    <div className="stepper">
+      {(['search', 'review', 'preview'] as const).map((k, i) => { const order = ['search', 'review', 'preview']; const cur = order.indexOf(step); return (
+        <span key={k} style={{ display: 'contents' }}>
+          {i > 0 && <span className="sep" />}
+          <span className={`step ${step === k ? 'active' : i < cur ? 'done' : ''}`}><i>{i < cur ? '✓' : i + 1}</i>{k === 'search' ? 'Find the property' : k === 'review' ? 'Review the packet' : 'Preview & send'}</span>
+        </span>
+      )})}
+    </div>
+  )
+
   // ---------------- render ----------------
   if (step === 'search') return (
     <>
+      {stepper}
       <div className="pagehead"><div><h1>New Deal · Start from property</h1><p className="muted">Search the live MLS by address, city, or MLS number. The listing prefills the RE-21.</p></div></div>
       <form className="searchbar" onSubmit={search}>
         <input ref={searchBox} autoFocus placeholder="431 S 3rd W, Rexburg, or MLS #2166543" value={query} onChange={(e) => setQuery(e.target.value)} />
@@ -110,6 +122,7 @@ export default function NewDeal({ me }: { me: Me }) {
 
   if (step === 'preview') return (
     <>
+      {stepper}
       <div className="pagehead">
         <div><h1>Packet Preview</h1><p className="muted">{listing?.unparsedAddress} · {selectedCount} document{selectedCount === 1 ? '' : 's'}</p></div>
         <div className="filters">
@@ -124,6 +137,7 @@ export default function NewDeal({ me }: { me: Me }) {
 
   return (
     <>
+      {stepper}
       <div className="pagehead">
         <div><h1>Review Packet</h1><p className="muted">{listing?.unparsedAddress} · MLS #{listing?.mlsNumber} · agent {me.first_name} {me.last_name}</p></div>
         <div className="filters"><button className="link" onClick={() => setStep('search')}>← Different property</button></div>

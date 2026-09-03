@@ -67,13 +67,31 @@ export default function DealPage({ me }: { me: Me }) {
 
   return (
     <>
-      <p><Link to="/">← Pipeline</Link></p>
-      <div className="pagehead">
-        <div>
-          <h1>{deal.property_address}</h1>
-          <p className="muted">Buyer: {deal.buyer_names}{teamView && <> · Agent: <b>{deal.agent_name}</b></>} · {deal.status_display}</p>
-        </div>
-      </div>
+      {(() => {
+        const total = PHASES.reduce((n, p) => n + p.tasks.length, 0)
+        const done = PHASES.reduce((n, p) => n + p.tasks.filter((t) => isDone(state.checklist_state[t.key] || 'Not Started')).length, 0)
+        const dl = computeDeadlines(deal)
+        const next = dl.find((x) => urgency(x.date) !== 'overdue')
+        const statusClass = deal.status === 'fully_executed' ? 'ok' : deal.status === 'out_for_signature' ? 'warn' : deal.status === 'cancelled' ? 'bad' : ''
+        return (
+          <div className="hero">
+            <div className="kicker"><Link to="/" style={{ color: '#9fb3c8' }}>Pipeline</Link> / Deal</div>
+            <h1>{deal.property_address}</h1>
+            <div className="facts">
+              <div className="fact"><div className="k">Buyer</div><div className="v">{deal.buyer_names}</div></div>
+              {teamView && <div className="fact"><div className="k">Agent</div><div className="v">{deal.agent_name}</div></div>}
+              <div className="fact"><div className="k">Status</div><div className="v"><span className={`status ${statusClass}`}>{deal.status_display}</span></div></div>
+              <div className="fact"><div className="k">Checklist</div><div className="v">{done} / {total} done</div></div>
+              {next && <div className="fact"><div className="k">Next deadline</div><div className="v">{next.title} · {next.date.toLocaleDateString()}</div></div>}
+              {deal.listing_agent_name && <div className="fact"><div className="k">Listing agent</div><div className="v">{deal.listing_agent_name}</div></div>}
+            </div>
+            <div className="heroactions">
+              {deal.signed_pdf_url ? <a href={deal.signed_pdf_url} target="_blank" rel="noreferrer">Executed packet</a> : deal.draft_pdf_url ? <a href={deal.draft_pdf_url} target="_blank" rel="noreferrer">Offer packet</a> : null}
+              {deal.signed_re21_url && <a href={deal.signed_re21_url} target="_blank" rel="noreferrer">RE-21 only</a>}
+            </div>
+          </div>
+        )
+      })()}
 
       {counter && (
         <div className="banner">
@@ -90,7 +108,7 @@ export default function DealPage({ me }: { me: Me }) {
           <h2>Key Deadlines</h2>
           <div className="deadlines">
             {dl.map((x) => { const u = urgency(x.date); return (
-              <div className="dl" key={x.title}><span>{x.title}<span className="muted small"> · {x.note}</span></span><span className={`status ${u === 'overdue' ? 'bad' : u === 'soon' ? 'warn' : ''}`}>{x.date.toLocaleDateString()}</span></div>
+              <div className={`dl ${u}`} key={x.title}><span className="dot" /><span>{x.title}<div className="note">{x.note}</div></span><span className={`status ${u === 'overdue' ? 'bad' : u === 'soon' ? 'warn' : ''}`}>{x.date.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}</span></div>
             )})}
           </div>
         </section>
@@ -114,7 +132,7 @@ export default function DealPage({ me }: { me: Me }) {
             const done = phase.tasks.filter((t) => isDone(state.checklist_state[t.key] || 'Not Started')).length
             return (
               <div className="phase" key={phase.title}>
-                <h3>{phase.title} <span className="muted">{done}/{phase.tasks.length}</span></h3>
+                <div className="phasehead"><h3>{phase.title}</h3><span className="count">{done}/{phase.tasks.length}</span><span className="bar"><i style={{ width: `${(done / phase.tasks.length) * 100}%` }} /></span></div>
                 {phase.tasks.map((t) => {
                   const s = state.checklist_state[t.key] || 'Not Started'
                   const doc = documentForTask(t.key, deal, docs)

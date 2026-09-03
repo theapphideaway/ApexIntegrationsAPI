@@ -25,10 +25,21 @@ export default function DueSoon({ me }: { me: Me }) {
   const agents = Array.from(new Map(deals.map((d) => [d.agent_id, d.agent_name])).entries())
   const noTimeline = deals.filter((d) => !d.is_archived && computeDeadlines(d).length === 0).length
 
+  // Group by calendar day for an agenda view.
+  const days: { key: string; date: Date; u: Row['u']; rows: Row[] }[] = []
+  for (const r of rows) {
+    const key = r.date.toDateString()
+    let day = days.find((d) => d.key === key)
+    if (!day) { day = { key, date: r.date, u: r.u, rows: [] }; days.push(day) }
+    day.rows.push(r)
+  }
+  const overdue = rows.filter((r) => r.u === 'overdue').length
+  const soon = rows.filter((r) => r.u === 'soon').length
+
   return (
     <>
       <div className="pagehead">
-        <h1>Due Soon</h1>
+        <div><h1>Due Soon</h1><p className="sub">{rows.length} deadline{rows.length === 1 ? '' : 's'} in the next {horizon === 365 ? 'year' : `${horizon} days`}{overdue ? ` · ${overdue} overdue` : ''}{soon ? ` · ${soon} within 3 days` : ''}</p></div>
         <div className="filters">
           {me.role !== 'agent' && (
             <select value={agent} onChange={(e) => setAgent(e.target.value)}>
@@ -41,22 +52,23 @@ export default function DueSoon({ me }: { me: Me }) {
           </select>
         </div>
       </div>
-      {rows.length === 0 && <p className="muted">Nothing due in this window.</p>}
-      <table className="table">
-        <thead><tr><th>When</th><th>Deadline</th><th>Deal</th>{me.role !== 'agent' && <th>Agent</th>}<th>Basis</th></tr></thead>
-        <tbody>
-          {rows.map((r, i) => (
-            <tr key={i} className={r.u}>
-              <td><span className={`status ${r.u === 'overdue' ? 'bad' : r.u === 'soon' ? 'warn' : ''}`}>{r.date.toLocaleDateString()}</span></td>
-              <td><b>{r.title}</b></td>
-              <td><Link to={`/deals/${r.deal.id}`}>{r.deal.property_address}</Link><div className="muted small">{r.deal.buyer_names}</div></td>
-              {me.role !== 'agent' && <td>{r.deal.agent_name}</td>}
-              <td className="muted">{r.note}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {noTimeline > 0 && <p className="muted small">{noTimeline} active deal(s) have no timeline yet — deadlines appear once a deal is executed and has its contract terms on file.</p>}
+      {rows.length === 0 && <div className="empty"><b>Nothing due in this window</b><span>Widen the window or check back after the next contract executes.</span></div>}
+      <div className="agenda">
+        {days.map((day) => (
+          <div className={`day ${day.u}`} key={day.key}>
+            <div className="date">{day.date.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}<small>{day.u === 'overdue' ? 'Overdue' : day.u === 'soon' ? 'Soon' : ''}</small></div>
+            <div className="items">
+              {day.rows.map((r, i) => (
+                <div className={`item ${r.u}`} key={i}>
+                  <div><div className="t">{r.title}</div><div className="m"><Link to={`/deals/${r.deal.id}`}>{r.deal.property_address}</Link> · {r.deal.buyer_names}{me.role !== 'agent' ? ` · ${r.deal.agent_name}` : ''}</div></div>
+                  <span className="muted small">{r.note}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+      {noTimeline > 0 && <p className="muted small" style={{ marginTop: 16 }}>{noTimeline} active deal{noTimeline === 1 ? ' has' : 's have'} no timeline yet — deadlines appear once a deal is executed and has its contract terms on file.</p>}
     </>
   )
 }

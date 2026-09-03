@@ -7,5 +7,5 @@ export default defineConfig({
   plugins: [react()],
   base: '/portal/',
   build: { outDir: 'dist', emptyOutDir: true },
-  server: { proxy: { '/api': 'https://www.apexintegrations.ai' } },
+  server: { proxy: { '/api': { target: 'https://www.apexintegrations.ai', changeOrigin: true, secure: true } } },
 })
