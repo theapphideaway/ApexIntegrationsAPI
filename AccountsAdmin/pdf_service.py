@@ -2,6 +2,7 @@ import textwrap
 
 
 import os
+import re
 from datetime import datetime
 from num2words import num2words
 from django.conf import settings
@@ -960,23 +961,27 @@ class PDFGenerationService:
         map['Acting as Agent for the Broker'] = agent_name  # AGENT line
 
         # --- PROPERTY CRITERIA ---
-        prop_type = data.get("propertyType", "residential")  # residential, income, commercial, land, build, other
-        if prop_type == "residential":
-            map['residential'] = "X"
-        elif prop_type == "income":
-            map['residential_income'] = "X"
-        elif prop_type == "commercial":
-            map['commercial'] = "X"
-        elif prop_type == "land":
-            map['vacant_land'] = "X"
-        elif prop_type == "build":
-            map['custom_build_land'] = "X"
-        else:
-            map['Other'] = "X"
+        # Property type is MULTI-select: a list, or a comma/semicolon-separated
+        # string ("residential,land"). Every matching box is marked; unknown
+        # values fall to "Other".
+        raw_types = data.get("propertyType", "residential")
+        if isinstance(raw_types, str):
+            raw_types = [t for t in re.split(r"[,;|]", raw_types)]
+        types = {str(t).strip().lower() for t in (raw_types or []) if str(t).strip()} or {"residential"}
+        type_boxes = {"residential": "residential", "income": "residential_income", "commercial": "commercial",
+                      "land": "vacant_land", "build": "custom_build_land"}
+        for t in types:
+            map[type_boxes.get(t, "Other")] = "X"
 
-        map['19 Applicable Citys'] = data.get("searchCity", "")
+        def joined(value):
+            """Cities / counties may arrive as a list or a comma-separated string."""
+            if isinstance(value, (list, tuple)):
+                return ", ".join(str(v).strip() for v in value if str(v).strip())
+            return ", ".join(part.strip() for part in re.split(r"[,;|]", str(value or "")) if part.strip())
+
+        map['19 Applicable Citys'] = joined(data.get("searchCity", ""))
         map[' Idaho'] = data.get("searchState", "Idaho")
-        map['20 Applicable Countys'] = data.get("searchCounty", "")
+        map['20 Applicable Countys'] = joined(data.get("searchCounty", ""))
         map['21 Other Description ie geographical area price etc'] = data.get("searchDescription", "")
 
         # --- TERM ---

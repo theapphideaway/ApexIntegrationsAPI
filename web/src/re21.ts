@@ -61,7 +61,7 @@ export const HOA_FREQ = [['monthly', 'Monthly'], ['annually', 'Annually']]
 export const PRORATION = [['closing', 'Date of closing'], ['date', 'Specific date']]
 export const CONTINGENCY_TYPES = [['inspection', 'Inspection'], ['financing', 'Financing'], ['appraisal', 'Appraisal'], ['saleOfProperty', 'Sale of property'], ['other', 'Other']]
 
-export type FieldType = 'text' | 'textarea' | 'money' | 'int' | 'date' | 'select' | 'toggle' | 'email' | 'phone'
+export type FieldType = 'text' | 'textarea' | 'money' | 'int' | 'date' | 'select' | 'multiselect' | 'tags' | 'toggle' | 'email' | 'phone'
 export type Field = { key: string; label: string; type: FieldType; options?: string[][]; required?: boolean; group?: string }
 export type Section = { id: string; title: string; fields: Field[] }
 
@@ -136,8 +136,9 @@ export const SECTIONS: Section[] = [
 ]
 
 export const RE14_FIELDS: Field[] = [
-  sel('propertyType', 'Property Type', [['residential', 'Residential'], ['income', 'Income'], ['commercial', 'Commercial'], ['land', 'Land'], ['build', 'To be built'], ['other', 'Other']]),
-  t('searchCity', 'Search City'), t('searchCounty', 'Search County'), t('searchState', 'Search State'), t('searchDescription', 'Search Description', { type: 'textarea' }),
+  { key: 'propertyType', label: 'Property Type (choose all that apply)', type: 'multiselect', options: [['residential', 'Residential'], ['income', 'Income'], ['commercial', 'Commercial'], ['land', 'Land'], ['build', 'To be built'], ['other', 'Other']] },
+  { key: 'searchCity', label: 'Cities (add each)', type: 'tags' }, { key: 'searchCounty', label: 'Counties (add each)', type: 'tags' },
+  t('searchState', 'Search State'), t('searchDescription', 'Search Description', { type: 'textarea' }),
   t('startDate', 'Term Start', { type: 'date' }), t('endDate', 'Term Expiration', { type: 'date' }),
   t('compensationPercentage', 'Compensation (%)'), t('compensationFlatFee', 'Transaction Fee ($)'), t('cancellationPercentage', 'Cancellation Fee'),
   sel('agencyType', 'Agency Type', [['dual', 'Dual'], ['single', 'Single']]), t('otherTerms', 'Other Terms', { type: 'textarea' }),

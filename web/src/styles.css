@@ -114,3 +114,6 @@ a.btnlink{background:#0a66c2;color:#fff;border-radius:8px;padding:8px 12px;font-
 .feed{display:flex;flex-direction:column}.feeditem{display:grid;grid-template-columns:130px 1fr;gap:12px;padding:8px 0;border-top:1px solid #eef0f2;font-size:14px}
 .feedwhen{color:#6b7280;font-size:12px;padding-top:2px}.feedbody{color:#4b5563;font-size:13px;white-space:pre-wrap;margin-top:2px}
 button.link.small{font-size:11px}
+
+.chips{display:flex;gap:6px;flex-wrap:wrap}.chip{border:1px solid #d1d5db;background:#fff;border-radius:999px;padding:5px 11px;font-size:13px;color:#4b5563;cursor:pointer}.chip.on{background:#e8f0fe;border-color:#0a66c2;color:#0a66c2;font-weight:600}
+.tagbox{display:flex;gap:6px;flex-wrap:wrap;align-items:center;border:1px solid #d1d5db;border-radius:8px;padding:5px 8px;background:#fff;cursor:text}.tagbox input{border:0;outline:0;padding:4px;flex:1;min-width:120px}

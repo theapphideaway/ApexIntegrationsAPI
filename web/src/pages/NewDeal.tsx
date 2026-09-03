@@ -195,6 +195,17 @@ function FieldInput({ f, value, onChange, invalid }: { f: Field; value: unknown;
   const cls = invalid ? 'invalid' : ''
   const label = <>{f.label}{f.required && <span className="req"> *</span>}</>
   switch (f.type) {
+    case 'multiselect': {
+      const chosen = new Set(String(value ?? '').split(',').map((v) => v.trim()).filter(Boolean))
+      return (
+        <label className="wide">{label}
+          <div className="chips">{f.options!.map(([v, l]) => (
+            <button type="button" key={v} className={`chip ${chosen.has(v) ? 'on' : ''}`} onClick={() => { chosen.has(v) ? chosen.delete(v) : chosen.add(v); onChange(Array.from(chosen).join(',')) }}>{chosen.has(v) ? '✓ ' : ''}{l}</button>
+          ))}</div>
+        </label>
+      )
+    }
+    case 'tags': return <TagsInput label={label} value={String(value ?? '')} onChange={(v) => onChange(v)} />
     case 'toggle': return <label className="check ftoggle"><input type="checkbox" checked={!!value} onChange={(e) => onChange(e.target.checked)} /><span>{f.label}</span></label>
     case 'select': return <label>{label}<select className={cls} value={String(value ?? '')} onChange={(e) => onChange(e.target.value || null)}><option value="">—</option>{f.options!.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
     case 'textarea': return <label className="wide">{label}<textarea className={cls} rows={3} value={String(value ?? '')} onChange={(e) => onChange(e.target.value || null)} /></label>
@@ -203,4 +214,22 @@ function FieldInput({ f, value, onChange, invalid }: { f: Field; value: unknown;
     case 'date': return <label>{label}<input className={cls} type="date" value={typeof value === 'string' ? value.slice(0, 10) : ''} onChange={(e) => onChange(e.target.value || null)} /></label>
     default: return <label>{label}<input className={cls} type={f.type === 'email' ? 'email' : f.type === 'phone' ? 'tel' : 'text'} value={String(value ?? '')} onChange={(e) => onChange(e.target.value || null)} /></label>
   }
+}
+
+
+/** Comma-joined list editor: type, Enter/comma adds a chip; click a chip to remove it. */
+function TagsInput({ label, value, onChange }: { label: React.ReactNode; value: string; onChange: (v: string) => void }) {
+  const [draft, setDraft] = useState('')
+  const items = value.split(',').map((v) => v.trim()).filter(Boolean)
+  const commit = () => { const t = draft.trim().replace(/,$/, ''); if (t && !items.includes(t)) onChange([...items, t].join(', ')); setDraft('') }
+  return (
+    <label className="wide">{label}
+      <div className="tagbox" onClick={(e) => (e.currentTarget.querySelector('input') as HTMLInputElement | null)?.focus()}>
+        {items.map((it) => <button type="button" key={it} className="chip on" onClick={() => onChange(items.filter((x) => x !== it).join(', '))}>{it} ×</button>)}
+        <input value={draft} placeholder={items.length ? 'add another…' : 'type and press Enter'} onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); commit() } else if (e.key === 'Backspace' && !draft && items.length) onChange(items.slice(0, -1).join(', ')) }}
+          onBlur={commit} />
+      </div>
+    </label>
+  )
 }
