@@ -47,7 +47,7 @@ export default function Pipeline({ me }: { me: Me }) {
         <div key={g.agent ?? 'all'} className="group">
           {g.agent && <h2 className="grouphead">{g.agent} <span className="muted">· {g.deals.length} deal{g.deals.length === 1 ? '' : 's'}</span></h2>}
           <table className="table">
-            <thead><tr><th>Property</th><th>Buyer(s)</th>{teamView && !groupByAgent && <th>Agent</th>}<th>Status</th><th>Next deadline</th><th></th></tr></thead>
+            <thead><tr><th>Property</th><th>Buyer(s)</th>{teamView && !groupByAgent && <th>Agent</th>}<th>Status</th><th>Packet</th><th>Next deadline</th><th></th></tr></thead>
             <tbody>
               {g.deals.map((d) => {
                 const nd = nextDeadline(d)
@@ -57,6 +57,7 @@ export default function Pipeline({ me }: { me: Me }) {
                     <td>{d.buyer_names}</td>
                     {teamView && !groupByAgent && <td>{d.agent_name}</td>}
                     <td><span className={`status ${STATUS_CLASS[d.status] || ''}`}>{d.status_display}</span></td>
+                    <td>{d.signed_pdf_url ? <a className="docbtn" href={d.signed_pdf_url} target="_blank" rel="noreferrer">Executed packet</a> : d.draft_pdf_url ? <a className="docbtn" href={d.draft_pdf_url} target="_blank" rel="noreferrer">Offer packet</a> : <span className="muted">—</span>}</td>
                     <td>{nd ? <><span className={`status ${urgency(nd.date) === 'soon' ? 'warn' : ''}`}>{nd.date.toLocaleDateString()}</span> <span className="muted small">{nd.title}</span></> : <span className="muted">—</span>}</td>
                     <td className="right"><button className="link" onClick={() => api.setArchived(d.id, !d.is_archived).then(load)}>{d.is_archived ? 'Restore' : 'Archive'}</button></td>
                   </tr>

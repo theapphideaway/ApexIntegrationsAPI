@@ -178,6 +178,9 @@ class Deal(models.Model):
     # S3 keys (legacy rows hold full presigned URLs, which run past 500
     # chars — TextField so Postgres accepts the old data).
     draft_pdf_url = models.TextField(blank=True, null=True)
+    # Executed RE-21 by itself (no RE-14 / agency brochure) — what title and
+    # the lender should receive; the full packet stays in signed_pdf_url.
+    signed_re21_url = models.TextField(blank=True, null=True)
     signed_pdf_url = models.TextField(blank=True, null=True)
 
     created_at = models.DateTimeField(auto_now_add=True)

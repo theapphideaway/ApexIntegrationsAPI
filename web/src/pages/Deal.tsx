@@ -134,6 +134,7 @@ export default function DealPage({ me }: { me: Me }) {
           <div className="cardhead"><h2>Documents</h2><button className="link" onClick={() => setShowCounter('new')}>+ Send a counter offer (RE-13)</button></div>
           <div className="doclist">
             {deal.signed_pdf_url && <a className="doc ok" href={deal.signed_pdf_url} target="_blank" rel="noreferrer"><b>Executed Packet</b><span>Signed by all parties</span></a>}
+            {deal.signed_re21_url && <a className="doc ok" href={deal.signed_re21_url} target="_blank" rel="noreferrer"><b>Executed RE-21</b><span>Title &amp; lender copy (RE-21 only)</span></a>}
             {deal.draft_pdf_url && <a className="doc" href={deal.draft_pdf_url} target="_blank" rel="noreferrer"><b>Offer Packet</b><span>As sent for signature</span></a>}
             {docs.map((d) => {
               const forwardable = d.doc_type === 're_13' && d.direction === 'sent' && d.status === 'signed'

@@ -651,6 +651,7 @@ def docusign_webhook(request):
             # certificate-of-completion summary doc is skipped.
             merged_pdf = pymupdf.open()
             merged_count = 0
+            re21_only_bytes = None   # the executed RE-21 alone → title / lender copy
             try:
                 for doc_info in documents:
                     if str(doc_info.get("documentId", "")).lower() == "certificate" \
@@ -659,7 +660,11 @@ def docusign_webhook(request):
                     doc_b64 = doc_info.get("PDFBytes")
                     if not doc_b64:
                         continue
-                    part = pymupdf.open("pdf", base64.b64decode(doc_b64))
+                    raw = base64.b64decode(doc_b64)
+                    doc_name = str(doc_info.get("name", "")).upper().replace("_", " ").replace("-", " ")
+                    if "RE 21" in doc_name:
+                        re21_only_bytes = raw
+                    part = pymupdf.open("pdf", raw)
                     merged_pdf.insert_pdf(part)
                     part.close()
                     merged_count += 1
@@ -686,6 +691,14 @@ def docusign_webhook(request):
             except Exception as s3_err:
                 print("🚨 [CRASH CAUGHT] AWS S3 Upload failed! Check your AWS credentials or bucket permissions.")
                 raise s3_err
+            # The executed RE-21 by itself — what title and the lender receive.
+            re21_only_path = None
+            if re21_only_bytes:
+                try:
+                    re21_only_path = default_storage.save(
+                        f"signed_contracts/signed_re21_only_{envelope_id}.pdf", ContentFile(re21_only_bytes))
+                except Exception as e:
+                    print(f"RE-21-only save failed (non-fatal): {e}")
 
             # Postgres Database Lookup
             print(f"📊 [TRACE 8] Querying Postgres for Deal with envelope_id: '{envelope_id}'")
@@ -694,6 +707,8 @@ def docusign_webhook(request):
                 print(f"📊 [TRACE 9] Match found! Deal ID: {deal.id}. Address: {deal.property_address}")
                 deal.status = 'fully_executed'
                 deal.signed_pdf_url = saved_path
+                if re21_only_path:
+                    deal.signed_re21_url = re21_only_path
                 if deal.acceptance_date is None:
                     deal.acceptance_date = timezone.now()
                 deal.save()
@@ -1351,9 +1366,18 @@ class DistributeExecutedPacketEndpoint(APIView):
         try:
             # 1. Download the fully signed combined PDF from DocuSign
             logger.info(f"📥 Downloading executed packet for envelope {envelope_id}...")
-            dist_deal = deals_for(request.user).filter(docusign_envelope_id=envelope_id).first()
-            ds_service = DocuSignService(env=dist_deal.docusign_env if dist_deal else "demo")
-            pdf_bytes = ds_service.download_envelope_document(envelope_id)
+            pdf_bytes = None
+            # Title and the lender only need the executed RE-21 — not the
+            # buyer-rep agreement or the agency brochure.
+            if dist_deal.signed_re21_url:
+                try:
+                    with default_storage.open(dist_deal.signed_re21_url, 'rb') as fh:
+                        pdf_bytes = fh.read()
+                except Exception as e:
+                    logger.warning(f"RE-21-only copy unreadable, falling back to the full packet: {e}")
+            if not pdf_bytes:
+                ds_service = DocuSignService(env=dist_deal.docusign_env)
+                pdf_bytes = ds_service.download_envelope_document(envelope_id)
 
             # 2. Build the distribution email targets
             destinations = []

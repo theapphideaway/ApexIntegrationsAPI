@@ -33,6 +33,7 @@ class DealSerializer(serializers.ModelSerializer):
     # We turn these into "Method Fields" so we can run custom Python code on them
     draft_pdf_url = serializers.SerializerMethodField()
     signed_pdf_url = serializers.SerializerMethodField()
+    signed_re21_url = serializers.SerializerMethodField()
 
     agent_id = serializers.SerializerMethodField()
     agent_name = serializers.SerializerMethodField()
@@ -55,6 +56,7 @@ class DealSerializer(serializers.ModelSerializer):
             'docusign_env',
             'draft_pdf_url',
             'signed_pdf_url',
+            'signed_re21_url',
             'is_archived',
             'acceptance_date',
             'form_snapshot',
@@ -89,6 +91,13 @@ class DealSerializer(serializers.ModelSerializer):
 
         # For all new data: Generate a fresh 5-minute link right now
         return default_storage.url(obj.draft_pdf_url)
+
+    def get_signed_re21_url(self, obj):
+        if not obj.signed_re21_url:
+            return None
+        if obj.signed_re21_url.startswith('http'):
+            return obj.signed_re21_url
+        return default_storage.url(obj.signed_re21_url)
 
     def get_signed_pdf_url(self, obj):
         if not obj.signed_pdf_url:

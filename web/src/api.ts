@@ -26,7 +26,7 @@ export type Deal = {
   id: number; agent_id: string; agent_name: string; agent_team?: string; property_address: string; buyer_names: string
   listing_agent_email?: string | null; listing_agent_name?: string
   status: string; status_display: string; docusign_envelope_id: string | null
-  draft_pdf_url: string | null; signed_pdf_url: string | null; is_archived: boolean
+  draft_pdf_url: string | null; signed_pdf_url: string | null; signed_re21_url?: string | null; is_archived: boolean
   acceptance_date: string | null; form_snapshot: Record<string, any> | null; updated_at: string
 }
 export type DealDocument = {
