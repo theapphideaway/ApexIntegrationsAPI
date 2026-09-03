@@ -107,6 +107,13 @@ export const api = {
   documents: (id: number) => request<DealDocument[]>(`/api/deals/${id}/documents/`),
   sendDocument: (id: number, body: { doc_type: string; fields: Record<string, unknown>; buyers?: { name: string; email: string }[]; resulting_terms?: Record<string, unknown>; source_document_id?: number }) =>
     request<DealDocument>(`/api/deals/${id}/documents/send/`, { method: 'POST', body: JSON.stringify(body) }),
+  // ---- Team admin (role admin; own team only) ----
+  team: {
+    get: (teamId?: string) => request<{ team: Team; members: PortalUser[]; deal_count: number }>(`/api/team/${teamId ? `?team=${teamId}` : ''}`),
+    rename: (name: string) => request<Team>('/api/team/', { method: 'PATCH', body: JSON.stringify({ name }) }),
+    invite: (body: { email: string; first_name: string; last_name: string; phone_number?: string; role: string }) => request<PortalUser>('/api/team/members/', { method: 'POST', body: JSON.stringify(body) }),
+    patchMember: (id: string, body: Record<string, unknown>) => request<PortalUser>(`/api/team/members/${id}/`, { method: 'PATCH', body: JSON.stringify(body) }),
+  },
   // ---- Developer portal (superuser only) ----
   dev: {
     settings: () => request<DevSettings>('/api/dev/settings/'),

@@ -107,3 +107,6 @@ a.btnlink{background:#0a66c2;color:#fff;border-radius:8px;padding:8px 12px;font-
 .task.done .check .docbtn{text-decoration:none}
 
 .table .docbtn{margin-left:0}
+
+.inline.title{font-size:24px;font-weight:700;padding:2px 6px;width:auto;min-width:280px}
+.notice{color:#166534;background:#dcfce7;border-radius:8px;padding:8px 12px;font-size:14px}

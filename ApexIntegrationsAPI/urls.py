@@ -22,7 +22,7 @@ from rest_framework_simplejwt.views import TokenRefreshView
 from django.conf import settings
 from django.urls import re_path
 from django.views.static import serve as static_serve
-from AccountsAdmin import dev_views
+from AccountsAdmin import dev_views, team_views
 from AccountsAdmin.views import (
     portal_index, DealArchiveView, DealDocumentsView, DealDocumentDetailView, DealDocumentSendView, DealStateView,
     docusign_webhook,
@@ -58,6 +58,11 @@ urlpatterns = [
     path('api/mls/search/', MLSAddressSearchView.as_view(), name='mls_search'),
 
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+
+    # Team-admin portal API (role admin; scoped to the admin's own team).
+    path('api/team/', team_views.TeamView.as_view(), name='team'),
+    path('api/team/members/', team_views.TeamMembersView.as_view(), name='team-members'),
+    path('api/team/members/<uuid:pk>/', team_views.TeamMemberDetailView.as_view(), name='team-member-detail'),
 
     # Developer / super-admin portal API (superuser only).
     path('api/dev/settings/', dev_views.DevSettingsView.as_view(), name='dev-settings'),

@@ -7,6 +7,7 @@ import DealPage from './pages/Deal'
 import DueSoon from './pages/DueSoon'
 import Dev from './pages/Dev'
 import NewDeal from './pages/NewDeal'
+import TeamPage from './pages/Team'
 import Console from './components/Console'
 
 const ROLE_LABEL: Record<Me['role'], string> = { admin: 'Team Admin', tc: 'Transaction Coordinator', agent: 'Agent' }
@@ -41,6 +42,7 @@ export default function App() {
           <Link to="/">Pipeline</Link>
           <Link to="/due">Due Soon</Link>
           {(me.role === 'agent' || me.is_superuser) && <Link to="/new" className="newdeal">+ New Deal</Link>}
+          {(me.role === 'admin' || me.is_superuser) && <Link to="/team">Team</Link>}
           {me.is_superuser && <Link to="/dev" className="dev">Dev</Link>}
         </nav>
         <div className="who">
@@ -57,6 +59,7 @@ export default function App() {
           <Route path="/" element={<Pipeline me={me} />} />
           <Route path="/due" element={<DueSoon me={me} />} />
           {(me.role === 'agent' || me.is_superuser) && <Route path="/new" element={<NewDeal me={me} />} />}
+          {(me.role === 'admin' || me.is_superuser) && <Route path="/team" element={<TeamPage me={me} />} />}
           {me.is_superuser && <Route path="/dev" element={<Dev me={me} />} />}
           <Route path="/deals/:id" element={<DealPage me={me} />} />
           <Route path="*" element={<Navigate to="/" replace />} />
