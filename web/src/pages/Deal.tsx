@@ -81,6 +81,7 @@ export default function DealPage({ me }: { me: Me }) {
         <CounterForm
           deal={deal}
           mode={showCounter}
+          received={showCounter === 'respond' ? counter : undefined}
           nextNumber={docs.filter((d) => d.doc_type === 're_13').length + 1}
           onClose={() => setShowCounter(null)}
           onSent={async () => { setShowCounter(null); await loadDocs(); setDeal(await api.deal(id)) }}

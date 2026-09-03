@@ -105,7 +105,7 @@ export const api = {
   dealState: (id: number) => request<DealState>(`/api/deals/${id}/state/`),
   patchChecklist: (id: number, statuses: Record<string, string>) => request<DealState>(`/api/deals/${id}/state/`, { method: 'PATCH', body: JSON.stringify({ checklist_state: statuses }) }),
   documents: (id: number) => request<DealDocument[]>(`/api/deals/${id}/documents/`),
-  sendDocument: (id: number, body: { doc_type: string; fields: Record<string, unknown>; buyers?: { name: string; email: string }[]; resulting_terms?: Record<string, unknown> }) =>
+  sendDocument: (id: number, body: { doc_type: string; fields: Record<string, unknown>; buyers?: { name: string; email: string }[]; resulting_terms?: Record<string, unknown>; source_document_id?: number }) =>
     request<DealDocument>(`/api/deals/${id}/documents/send/`, { method: 'POST', body: JSON.stringify(body) }),
   // ---- Developer portal (superuser only) ----
   dev: {

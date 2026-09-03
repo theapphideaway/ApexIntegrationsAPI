@@ -1,12 +1,13 @@
 import { useState } from 'react'
-import { api, type Deal } from '../api'
+import { api, type Deal, type DealDocument } from '../api'
 
 /** RE-13 counter offer: either respond to a received seller counter (buyer
  *  accepts by signing our transcription of it) or send a new buyer counter.
  *  Sent to the buyer for signature under the deal's agent identity. */
-export default function CounterForm({ deal, mode, nextNumber, onClose, onSent }:
-  { deal: Deal; mode: 'respond' | 'new'; nextNumber: number; onClose: () => void; onSent: () => void }) {
-  const [isSellerCounter, setIsSellerCounter] = useState(mode === 'respond')
+export default function CounterForm({ deal, mode, nextNumber, received, onClose, onSent }:
+  { deal: Deal; mode: 'respond' | 'new'; nextNumber: number; received?: DealDocument; onClose: () => void; onSent: () => void }) {
+  const [view, setView] = useState<'accept' | 'form'>(mode === 'respond' && received ? 'accept' : 'form')
+  const [isSellerCounter, setIsSellerCounter] = useState(false)
   const [terms, setTerms] = useState('')
   const [expDate, setExpDate] = useState('')
   const [expTime, setExpTime] = useState('5:00 PM')
@@ -14,6 +15,18 @@ export default function CounterForm({ deal, mode, nextNumber, onClose, onSent }:
   const [newClosing, setNewClosing] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  async function acceptAsIs(e: React.FormEvent) {
+    e.preventDefault(); if (!received) return
+    setBusy(true); setError(null)
+    try {
+      const resulting: Record<string, unknown> = {}
+      if (newPrice) resulting.offerPrice = Number(newPrice.replace(/[^0-9.]/g, ''))
+      if (newClosing) resulting.closingDate = new Date(newClosing).toISOString()
+      await api.sendDocument(deal.id, { doc_type: 're_13', fields: {}, source_document_id: received.id, resulting_terms: Object.keys(resulting).length ? resulting : undefined })
+      onSent()
+    } catch (err) { setError(String(err)) } finally { setBusy(false) }
+  }
 
   async function send(e: React.FormEvent) {
     e.preventDefault(); setBusy(true); setError(null)
@@ -36,6 +49,30 @@ export default function CounterForm({ deal, mode, nextNumber, onClose, onSent }:
       onSent()
     } catch (err) { setError(String(err)) } finally { setBusy(false) }
   }
+
+  if (view === 'accept' && received) return (
+    <div className="modal" onClick={onClose}>
+      <form className="card dialog" onClick={(e) => e.stopPropagation()} onSubmit={acceptAsIs}>
+        <h2>Accept &amp; Sign · {received.title}</h2>
+        <p className="muted small">{deal.property_address} · buyer: {deal.buyer_names}</p>
+        <p>The seller&apos;s counter goes to the buyer <b>exactly as received</b>, with signature and date tabs on the buyer lines. Nothing to retype. <a href={received.pdf_url || '#'} target="_blank" rel="noreferrer">Open the counter →</a></p>
+        <fieldset>
+          <legend>Deal terms changed by this counter (optional)</legend>
+          <div className="row">
+            <label>New purchase price<input inputMode="decimal" value={newPrice} onChange={(e) => setNewPrice(e.target.value)} placeholder="leave blank if unchanged" /></label>
+            <label>New closing date<input type="date" value={newClosing} onChange={(e) => setNewClosing(e.target.value)} /></label>
+          </div>
+          <p className="muted small">Bookkeeping only — the PDF is untouched. Updating these recomputes the deadlines everywhere.</p>
+        </fieldset>
+        {error && <p className="error">{error}</p>}
+        <div className="row end">
+          <button type="button" className="link" onClick={onClose}>Cancel</button>
+          <button type="button" className="link" onClick={() => setView('form')}>Counter back instead</button>
+          <button className="primary" disabled={busy}>{busy ? 'Sending to DocuSign…' : 'Send to buyer for signature'}</button>
+        </div>
+      </form>
+    </div>
+  )
 
   return (
     <div className="modal" onClick={onClose}>

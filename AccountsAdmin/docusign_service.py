@@ -136,6 +136,47 @@ class DocuSignService:
             envelope=Envelope(status="voided", voided_reason=reason)
         )
 
+    # Idaho RE-13 (Letter, 612x792pt, page 1): buyer signature rows 60/62 and
+    # their Date boxes, from the form's own field rectangles. Used to sign a
+    # counter we RECEIVED (no anchor text of ours inside it). Coordinates are
+    # points from the top-left = DocuSign's 72-dpi pixel positions.
+    RE13_BUYER_TABS = [
+        {"sign": (70, 680), "date": (346, 686)},   # BUYER (line 60)
+        {"sign": (70, 701), "date": (346, 707)},   # BUYER (line 62)
+    ]
+
+    def send_pdf_envelope(self, pdf_bytes: bytes, document_name: str, buyers: list,
+                          tab_positions: list, email_subject: str, page_number: int = 1) -> dict:
+        """Sends a PDF we did not generate (e.g. the listing agent's counter)
+        for signature, placing each signer's SignHere + DateSigned tabs at
+        fixed page positions instead of anchor strings."""
+        access_token = self._get_access_token()
+        api_client = ApiClient()
+        api_client.host = self.base_path
+        api_client.set_default_header("Authorization", f"Bearer {access_token}")
+
+        document = Document(document_base64=base64.b64encode(pdf_bytes).decode("utf-8"),
+                            name=document_name, file_extension="pdf", document_id="1")
+        signers = []
+        for index, buyer in enumerate(buyers):
+            if index >= len(tab_positions):
+                break
+            pos = tab_positions[index]
+            signer_id = str(index + 1)
+            signer = Signer(email=buyer["email"], name=buyer["name"], recipient_id=signer_id, routing_order="1")
+            signer.tabs = Tabs(
+                sign_here_tabs=[SignHere(document_id="1", page_number=str(page_number),
+                                         x_position=str(pos["sign"][0]), y_position=str(pos["sign"][1]))],
+                date_signed_tabs=[DateSigned(document_id="1", page_number=str(page_number),
+                                             x_position=str(pos["date"][0]), y_position=str(pos["date"][1]))],
+            )
+            signers.append(signer)
+
+        envelope_definition = EnvelopeDefinition(email_subject=email_subject, documents=[document],
+                                                 recipients=Recipients(signers=signers), status="sent")
+        summary = EnvelopesApi(api_client).create_envelope(account_id=self.account_id, envelope_definition=envelope_definition)
+        return {"status": "sent", "envelope_id": summary.envelope_id}
+
     def send_bundle_envelope(self, bundled_data: dict, buyers: list,
                              email_subject: str = "Please sign your Onboarding & Purchase Packet") -> dict:
         """

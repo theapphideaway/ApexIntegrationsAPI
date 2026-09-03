@@ -959,6 +959,45 @@ class DealDocumentSendView(APIView):
                 return Response({"error": "This deal has no buyer email on file — pass buyers explicitly."}, status=400)
             buyers = [{"name": deal.buyer_names, "email": deal.buyer_email}]
 
+        # ACCEPT AS-IS: send the counter we RECEIVED (the listing agent's PDF)
+        # to the buyer(s) to sign, untouched. Nothing to retype — the buyer
+        # signs the seller's own document. Tabs are placed by position on
+        # the standard Idaho RE-13 layout.
+        source_id = request.data.get("source_document_id")
+        if source_id:
+            source = deal.documents.filter(pk=source_id, direction='received').first()
+            if source is None or not source.pdf_key:
+                return Response({"error": "That received document wasn't found on this deal."}, status=404)
+            try:
+                with default_storage.open(source.pdf_key, 'rb') as fh:
+                    pdf_bytes = fh.read()
+            except Exception as e:
+                return Response({"error": f"Couldn't read the received document: {e}"}, status=502)
+            ds_service = DocuSignService(env=DocuSignService.env_for_user(deal.agent))
+            try:
+                result = ds_service.send_pdf_envelope(
+                    pdf_bytes=pdf_bytes, document_name=source.title, buyers=buyers,
+                    tab_positions=DocuSignService.RE13_BUYER_TABS,
+                    email_subject=f"Please sign: {source.title} (seller's counter) — {deal.property_address}",
+                )
+            except Exception as e:
+                return Response({"error": f"DocuSign send failed: {e}"}, status=502)
+            doc = DealDocument.objects.create(
+                deal=deal, doc_type=source.doc_type, title=f"{source.title} — accepted", direction='sent',
+                sequence=source.sequence, status='out_for_signature',
+                docusign_envelope_id=result.get("envelope_id"), pdf_key=source.pdf_key,
+                docusign_env=ds_service.env,
+            )
+            source.status = 'signed'   # responded — the banner clears; the sent copy carries the envelope
+            source.save(update_fields=["status"])
+            terms = request.data.get("resulting_terms")
+            if isinstance(terms, dict) and terms:
+                snapshot = dict(deal.form_snapshot or {})
+                snapshot.update({k: v for k, v in terms.items() if v not in (None, "")})
+                deal.form_snapshot = snapshot
+                deal.save(update_fields=["form_snapshot"])
+            return Response(DealDocumentSerializer(doc).data, status=201)
+
         # Document data = the deal's RE-21 as sent + document-specific fields.
         data = dict(deal.form_snapshot or {})
         data.update({k: v for k, v in fields.items() if v not in (None, "")})
