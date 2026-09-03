@@ -4,12 +4,12 @@
 const ACCESS = 'portal_access'
 const REFRESH = 'portal_refresh'
 
-export type Me = { id: string; email: string; first_name: string; last_name: string; role: 'admin' | 'tc' | 'agent'; organization: string | null; is_superuser?: boolean }
+export type Me = { id: string; email: string; first_name: string; last_name: string; role: 'admin' | 'tc' | 'agent'; organization: string | null; is_superuser?: boolean; docusign_production?: boolean; docusign_env?: 'demo' | 'production' }
 export type Team = { id: string; name: string; plan_type: string; is_active: boolean; created_at: string; member_count?: number; deal_count?: number }
 export type PortalUser = Me & { phone_number: string | null; organization_name: string | null; deal_count: number; fub_connected: boolean; is_active: boolean }
 export type DevSettings = {
   settings: Record<string, unknown>; defaults: Record<string, unknown>
-  docusign: { current: 'demo' | 'production'; environments: Record<string, { auth_server: string; base_path: string; client_id_set: boolean; user_id_set: boolean; account_id_set: boolean; private_key_present: boolean; private_key_path: string; configured: boolean }> }
+  docusign: { current: 'demo' | 'production'; master_production: boolean; production_users: number; environments: Record<string, { auth_server: string; base_path: string; client_id_set: boolean; user_id_set: boolean; account_id_set: boolean; private_key_present: boolean; private_key_path: string; configured: boolean }> }
   server: { debug: boolean; db_engine: string }
 }
 

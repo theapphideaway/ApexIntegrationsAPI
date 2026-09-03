@@ -13,10 +13,18 @@ class CustomUserSerializer(serializers.ModelSerializer):
     # We use PrimaryKeyRelatedField so Postman can just send the Organization UUID string
     organization = serializers.PrimaryKeyRelatedField(queryset=Organization.objects.all())
     is_superuser = serializers.BooleanField(read_only=True)
+    docusign_env = serializers.SerializerMethodField()
 
     class Meta:
         model = CustomUser
-        fields = ['id', 'email', 'first_name', 'last_name', 'phone_number', 'role', 'organization', 'is_superuser']
+        fields = ['id', 'email', 'first_name', 'last_name', 'phone_number', 'role', 'organization', 'is_superuser',
+                  'docusign_production', 'docusign_env']
+        extra_kwargs = {'docusign_production': {'required': False}}
+
+    def get_docusign_env(self, obj):
+        """Effective DocuSign environment for envelopes this user creates."""
+        from .docusign_service import DocuSignService
+        return DocuSignService.env_for_user(obj)
 
 
 class DealSerializer(serializers.ModelSerializer):
@@ -42,6 +50,7 @@ class DealSerializer(serializers.ModelSerializer):
             'status',
             'status_display',
             'docusign_envelope_id',
+            'docusign_env',
             'draft_pdf_url',
             'signed_pdf_url',
             'is_archived',
@@ -95,7 +104,7 @@ class DealDocumentSerializer(serializers.ModelSerializer):
     class Meta:
         model = DealDocument
         fields = ['id', 'doc_type', 'title', 'direction', 'sequence', 'status',
-                  'docusign_envelope_id', 'pdf_url', 'signed_pdf_url', 'created_at']
+                  'docusign_envelope_id', 'docusign_env', 'pdf_url', 'signed_pdf_url', 'created_at']
 
     def _url(self, key):
         if not key:

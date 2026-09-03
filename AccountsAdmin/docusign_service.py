@@ -35,8 +35,23 @@ class DocuSignService:
 
     @staticmethod
     def current_env() -> str:
+        """Production MASTER switch (dev portal). 'demo' = everyone on the sandbox."""
         from .settings_service import get_setting
         return get_setting("docusign_env", "demo") or "demo"
+
+    @classmethod
+    def production_configured(cls) -> bool:
+        cfg = cls.env_config("production")
+        return all([cfg["client_id"], cfg["user_id"], cfg["account_id"], os.path.exists(cfg["private_key_path"])])
+
+    @classmethod
+    def env_for_user(cls, user) -> str:
+        """Effective environment for envelopes created for this user:
+        production only if the master switch is on, the user is flagged for
+        production, and production credentials exist — otherwise demo."""
+        if cls.current_env() == "production" and getattr(user, "docusign_production", False) and cls.production_configured():
+            return "production"
+        return "demo"
 
     def __init__(self, env: str = None):
         cfg = self.env_config(env or self.current_env())

@@ -46,6 +46,7 @@ export default function App() {
         <div className="who">
           <span>{me.first_name} {me.last_name}</span>
           <span className="pill">{ROLE_LABEL[me.role]}</span>
+          <span className={`pill ${me.docusign_env === 'production' ? 'prod' : 'test'}`} title="DocuSign account used for envelopes you send">DocuSign {me.docusign_env === 'production' ? 'PROD' : 'TEST'}</span>
           {me.is_superuser && <button className="link" onClick={() => setConsoleOpen((v) => !v)}>{consoleOpen ? 'Hide console' : 'Console'}</button>}
           <button className="link" onClick={() => { auth.clear(); setMe(null); navigate('/login') }}>Log out</button>
         </div>

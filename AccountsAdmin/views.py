@@ -540,7 +540,7 @@ class SendOnboardingBundleEndpoint(APIView):
 
         try:
             # 3. Call your multi-document bundle method
-            ds_service = DocuSignService()
+            ds_service = DocuSignService(env=DocuSignService.env_for_user(owner))
             result = ds_service.send_bundle_envelope(
                 bundled_data=bundled_data,
                 buyers=raw_buyers
@@ -575,6 +575,7 @@ class SendOnboardingBundleEndpoint(APIView):
 
             # 5. Save/Update Deal in Postgres
             deal = Deal.objects.create(
+                docusign_env=ds_service.env,
                 agent=owner,
                 docusign_envelope_id=envelope_id,
                 property_address=property_address,
@@ -778,10 +779,12 @@ class RE21ContractStatusEndpoint(APIView):
         Checks if the contract is signed and returns the status.
         """
         # Only envelopes on deals this user can see (own, or team for TC/admin).
-        if not deals_for(request.user).filter(docusign_envelope_id=envelope_id).exists():
+        status_deal = deals_for(request.user).filter(docusign_envelope_id=envelope_id).first()
+        if status_deal is None:
             return Response({"error": "Not found."}, status=404)
         try:
-            ds_service = DocuSignService()
+            # Talk to the account the envelope actually lives in.
+            ds_service = DocuSignService(env=status_deal.docusign_env)
 
             # 1. Fetch Envelope Details from DocuSign
             # We'll use the SDK's built-in call to check status
@@ -928,7 +931,8 @@ class DealDocumentSendView(APIView):
             title = doc_type.upper().replace("_", "-")
 
         try:
-            result = DocuSignService().send_bundle_envelope(
+            ds_service = DocuSignService(env=DocuSignService.env_for_user(deal.agent))
+            result = ds_service.send_bundle_envelope(
                 bundled_data={doc_type: data}, buyers=buyers,
                 email_subject=f"Please sign: {title} — {deal.property_address}",
             )
@@ -947,6 +951,7 @@ class DealDocumentSendView(APIView):
         doc = DealDocument.objects.create(
             deal=deal, doc_type=doc_type, title=title, direction='sent', sequence=sequence,
             status='out_for_signature', docusign_envelope_id=envelope_id, pdf_key=draft_key,
+            docusign_env=ds_service.env,
         )
 
         # Accepted counter → the deal's effective terms change.
@@ -1044,6 +1049,7 @@ class DealDetailEndpoint(RetrieveDestroyAPIView):
         envelope_id = instance.docusign_envelope_id
         deal_status = instance.status
         deal_id = instance.id
+        deal_env = instance.docusign_env
         file_keys = [k for k in (instance.draft_pdf_url, instance.signed_pdf_url) if k]
         instance.delete()
 
@@ -1052,7 +1058,7 @@ class DealDetailEndpoint(RetrieveDestroyAPIView):
         # the row is already gone.
         if envelope_id and deal_status in ('out_for_signature', 'signed_by_buyers'):
             try:
-                DocuSignService().void_envelope(envelope_id)
+                DocuSignService(env=deal_env).void_envelope(envelope_id)
                 print(f"Voided envelope {envelope_id} for deleted deal {deal_id}")
             except Exception as e:
                 print(f"Failed to void envelope {envelope_id}: {e}")
@@ -1251,7 +1257,8 @@ class DistributeExecutedPacketEndpoint(APIView):
         if not envelope_id:
             return Response({"error": "Missing envelope_id"}, status=400)
         # Only packets from deals this user can see (own, or team for TC/admin).
-        if not deals_for(request.user).filter(docusign_envelope_id=envelope_id).exists():
+        dist_deal = deals_for(request.user).filter(docusign_envelope_id=envelope_id).first()
+        if dist_deal is None:
             return Response({"error": "Not found."}, status=404)
         if not property_address:
             return Response({"error": "Missing property_address"}, status=400)
@@ -1261,7 +1268,8 @@ class DistributeExecutedPacketEndpoint(APIView):
         try:
             # 1. Download the fully signed combined PDF from DocuSign
             logger.info(f"📥 Downloading executed packet for envelope {envelope_id}...")
-            ds_service = DocuSignService()
+            dist_deal = deals_for(request.user).filter(docusign_envelope_id=envelope_id).first()
+            ds_service = DocuSignService(env=dist_deal.docusign_env if dist_deal else "demo")
             pdf_bytes = ds_service.download_envelope_document(envelope_id)
 
             # 2. Build the distribution email targets

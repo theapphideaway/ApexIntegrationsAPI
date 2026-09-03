@@ -33,13 +33,18 @@ export default function Dev({ me }: { me: Me }) {
       {error && <p className="error">{error}</p>}
 
       <section className="card" style={{ marginBottom: 20 }}>
-        <div className="cardhead"><h2>DocuSign environment</h2><span className={`status ${ds.current === 'production' ? 'bad' : 'warn'}`}>{ds.current.toUpperCase()}</span></div>
+        <div className="cardhead"><h2>DocuSign environments</h2><span className={`status ${ds.master_production ? 'bad' : 'warn'}`}>MASTER: {ds.master_production ? 'PRODUCTION ENABLED' : 'TEST ONLY'}</span></div>
+        <div className="master">
+          <label className="check">
+            <input type="checkbox" checked={ds.master_production} disabled={busy !== null || (!ds.master_production && !ds.environments.production.configured)}
+              onChange={(e) => { if (e.target.checked && !confirm('Enable PRODUCTION DocuSign for users flagged Prod? Their envelopes become legally binding and billed.')) return; run('env', () => api.dev.patchSettings({ docusign_env: e.target.checked ? 'production' : 'demo' })) }} />
+            <span><b>Production master switch</b> — {ds.production_users} user{ds.production_users === 1 ? '' : 's'} flagged for Prod below. Off = everyone uses the test account regardless of their flag.{!ds.environments.production.configured && ' (Disabled until production credentials are on the server.)'}</span>
+          </label>
+        </div>
         <div className="envgrid">
           {(['demo', 'production'] as const).map((env) => { const e = ds.environments[env]; return (
-            <div key={env} className={`envcard ${ds.current === env ? 'active' : ''}`}>
-              <label className="check"><input type="radio" name="dsenv" checked={ds.current === env} disabled={!e.configured || busy !== null}
-                onChange={() => { if (env === 'production' && !confirm('Switch ALL signing to PRODUCTION DocuSign? Envelopes will be legally binding and billed.')) return; run('env', () => api.dev.patchSettings({ docusign_env: env })) }} />
-                <b>{env === 'demo' ? 'Demo (sandbox)' : 'Production'}</b></label>
+            <div key={env} className={`envcard ${(env === 'production') === ds.master_production ? 'active' : ''}`}>
+              <b>{env === 'demo' ? 'Test (sandbox)' : 'Production'} {e.configured ? <span className="status ok">configured</span> : <span className="status bad">not configured</span>}</b>
               <div className="small muted">{e.auth_server}<br />{e.base_path}</div>
               <ul className="checks">
                 <li className={e.client_id_set ? 'ok' : 'bad'}>Integration key {env === 'production' ? '(DOCUSIGN_PROD_CLIENT_ID)' : '(DOCUSIGN_CLIENT_ID)'}</li>
@@ -88,7 +93,7 @@ export default function Dev({ me }: { me: Me }) {
       <section className="card" style={{ marginTop: 20 }}>
         <div className="cardhead"><h2>Users</h2><span className="muted small">{users.length} total</span></div>
         <table className="table compact">
-          <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Role</th><th>Team</th><th>Deals</th><th>FUB</th><th>Active</th><th></th></tr></thead>
+          <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Role</th><th>Team</th><th>Deals</th><th>DocuSign</th><th>FUB</th><th>Active</th><th></th></tr></thead>
           <tbody>{users.map((u) => (
             <tr key={u.id} className={u.is_active ? '' : 'inactive'}>
               <td>{u.first_name} {u.last_name}{u.is_superuser && <span className="pill" style={{ marginLeft: 6 }}>dev</span>}</td>
@@ -97,6 +102,13 @@ export default function Dev({ me }: { me: Me }) {
               <td><select className="inline" value={u.role} onChange={(e) => run('user', () => api.dev.patchUser(u.id, { role: e.target.value }))}>{ROLES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></td>
               <td><select className="inline" value={u.organization || ''} onChange={(e) => run('user', () => api.dev.patchUser(u.id, { organization: e.target.value || null }))}><option value="">— none —</option>{teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></td>
               <td>{u.deal_count}</td>
+              <td>
+                <button type="button" className={`envtoggle ${u.docusign_production ? 'prod' : 'test'}`} disabled={busy !== null} title="Click to switch this user's DocuSign account"
+                  onClick={() => run('user', () => api.dev.patchUser(u.id, { docusign_production: !u.docusign_production }))}>
+                  {u.docusign_production ? 'PROD' : 'TEST'}
+                </button>
+                {u.docusign_production && u.docusign_env !== 'production' && <span className="muted small" title="Flagged for production but the master switch is off or prod isn't configured — still sending on test."> → test</span>}
+              </td>
               <td>{u.fub_connected ? <span className="status ok">linked</span> : <span className="muted">—</span>}</td>
               <td><input type="checkbox" checked={u.is_active} disabled={u.id === me.id} onChange={(e) => run('user', () => api.dev.patchUser(u.id, { is_active: e.target.checked }))} /></td>
               <td className="right">{u.id !== me.id && <button className="link danger" onClick={() => { if (!confirm(`Delete ${u.email}?`)) return; run('del', async () => { try { await api.dev.deleteUser(u.id) } catch (err) { if (String(err).includes('owns') && confirm(`${err}\n\nDelete the user AND their deals?`)) await api.dev.deleteUser(u.id, true); else throw err } }) }}>Delete</button>}</td>

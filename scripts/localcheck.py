@@ -9,4 +9,7 @@ env = dict(os.environ)
 for n in names:
     env.setdefault(n, '1234567')
 env.update(DATABASE_URL='', DJANGO_SECRET_KEY='localcheck', PUSHER_APP_ID='123456', PUSHER_CLUSTER='us2', MLS_LISTING_ID_FIELD='ListingId', OTP_DEV_BYPASS='')
-sys.exit(subprocess.run([sys.executable, 'manage.py', 'check'], cwd=root, env=env).returncode)
+rc = subprocess.run([sys.executable, 'manage.py', 'check'], cwd=root, env=env).returncode
+# Hand-written migrations must match the models exactly.
+rc |= subprocess.run([sys.executable, 'manage.py', 'makemigrations', '--check', '--dry-run'], cwd=root, env=env).returncode
+sys.exit(rc)

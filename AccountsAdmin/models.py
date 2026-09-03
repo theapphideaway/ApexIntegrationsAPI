@@ -94,6 +94,9 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     last_login_ip = models.GenericIPAddressField(null=True, blank=True)  # Good for security audits
     # TextField: OAuth tokens have no fixed length (SQLite ignored the old
     # 255 cap; Postgres enforces it and rejected real FUB tokens).
+    # Per-user DocuSign environment: True = production account (only effective
+    # when the production master switch is on and prod creds exist); False = demo.
+    docusign_production = models.BooleanField(default=False)
     fub_access_token = models.TextField(blank=True, null=True)
     fub_refresh_token = models.TextField(blank=True, null=True)
 
@@ -166,6 +169,7 @@ class Deal(models.Model):
 
     # DocuSign Tracking
     docusign_envelope_id = models.CharField(max_length=100, blank=True, null=True)
+    docusign_env = models.CharField(max_length=12, default='demo')  # 'demo' | 'production'
 
     # S3 keys (legacy rows hold full presigned URLs, which run past 500
     # chars — TextField so Postgres accepts the old data).
@@ -199,6 +203,7 @@ class DealDocument(models.Model):
     sequence = models.PositiveIntegerField(default=1)  # counter #1, #2…
     status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='received')
     docusign_envelope_id = models.CharField(max_length=100, blank=True, null=True)
+    docusign_env = models.CharField(max_length=12, default='demo')  # 'demo' | 'production'
     pdf_key = models.CharField(max_length=500, blank=True, null=True)
     signed_pdf_key = models.CharField(max_length=500, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)

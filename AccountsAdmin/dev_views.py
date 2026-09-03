@@ -19,7 +19,8 @@ class IsSuperuser(IsAuthenticated):
 
 
 def _docusign_status():
-    out = {"current": DocuSignService.current_env(), "environments": {}}
+    out = {"current": DocuSignService.current_env(), "master_production": DocuSignService.current_env() == "production",
+           "production_users": CustomUser.objects.filter(docusign_production=True).count(), "environments": {}}
     for env in ("demo", "production"):
         cfg = DocuSignService.env_config(env)
         out["environments"][env] = {
@@ -151,6 +152,8 @@ class DevUserDetailView(APIView):
                 setattr(user, f, d[f])
         if "phone_number" in d:
             user.phone_number = d["phone_number"] or None
+        if "docusign_production" in d:
+            user.docusign_production = bool(d["docusign_production"])
         if "is_active" in d:
             if user.pk == request.user.pk and not d["is_active"]:
                 return Response({"error": "You can't deactivate yourself."}, status=400)
