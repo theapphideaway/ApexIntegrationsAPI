@@ -144,6 +144,10 @@ class Deal(models.Model):
     # Primary buyer's email — lets the DocuSign webhook attach the executed
     # packet to the right CRM contact without re-querying the envelope.
     buyer_email = models.EmailField(blank=True, null=True)
+    # Listing-side contact captured from the MLS when the offer was sent —
+    # where buyer-originated counters get forwarded.
+    listing_agent_email = models.EmailField(blank=True, null=True)
+    listing_agent_name = models.CharField(max_length=150, blank=True, default='')
     # True once this deal has been posted to the agent's CRM (Follow Up Boss),
     # so connect-time backfills never create duplicate notes.
     fub_synced = models.BooleanField(default=False)

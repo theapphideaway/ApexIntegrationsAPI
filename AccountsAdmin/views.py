@@ -581,6 +581,8 @@ class SendOnboardingBundleEndpoint(APIView):
                 property_address=property_address,
                 buyer_names=buyer_names,
                 buyer_email=primary_buyer.get("email") or None,
+                listing_agent_email=(payload.get("listing_agent_email") or None),
+                listing_agent_name=(payload.get("listing_agent_name") or "")[:150],
                 draft_pdf_url=draft_path,
                 form_snapshot=re21_data,   # server-side copy → any device can revise
                 status='out_for_signature'
@@ -882,6 +884,48 @@ class DealDocumentsView(APIView):
             sequence=sequence, status='received', pdf_key=key,
         )
         return Response(DealDocumentSerializer(doc).data, status=201)
+
+
+class DealDocumentDetailView(APIView):
+    """PATCH /api/deals/<pk>/documents/<doc_id>/  {status}  — e.g. mark a
+    received counter 'rejected' (negotiation over) or back to 'received'.
+    DELETE removes an uploaded document (and its files)."""
+    permission_classes = [IsAuthenticated]
+    ALLOWED = ('received', 'rejected', 'signed')
+
+    def _doc(self, request, pk, doc_id):
+        deal = deals_for(request.user).filter(pk=pk).first()
+        if deal is None:
+            return None
+        return deal.documents.filter(pk=doc_id).first()
+
+    def patch(self, request, pk, doc_id):
+        doc = self._doc(request, pk, doc_id)
+        if doc is None:
+            return Response({"error": "Not found."}, status=404)
+        new_status = request.data.get("status")
+        if new_status not in self.ALLOWED:
+            return Response({"error": f"status must be one of {self.ALLOWED}"}, status=400)
+        if doc.status == 'out_for_signature' and new_status != 'rejected':
+            return Response({"error": "An envelope out for signature is updated by DocuSign, not by hand."}, status=400)
+        doc.status = new_status
+        doc.save(update_fields=["status"])
+        return Response(DealDocumentSerializer(doc).data)
+
+    def delete(self, request, pk, doc_id):
+        doc = self._doc(request, pk, doc_id)
+        if doc is None:
+            return Response({"error": "Not found."}, status=404)
+        if doc.status == 'out_for_signature':
+            return Response({"error": "Void or complete the envelope before deleting this document."}, status=400)
+        for key in (doc.pdf_key, doc.signed_pdf_key):
+            if key:
+                try:
+                    default_storage.delete(key)
+                except Exception as e:
+                    print(f"S3 cleanup failed for {key}: {e}")
+        doc.delete()
+        return Response(status=204)
 
 
 class DealDocumentSendView(APIView):

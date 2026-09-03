@@ -47,6 +47,8 @@ class DealSerializer(serializers.ModelSerializer):
             'agent_team',
             'property_address',
             'buyer_names',
+            'listing_agent_email',
+            'listing_agent_name',
             'status',
             'status_display',
             'docusign_envelope_id',

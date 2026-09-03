@@ -24,6 +24,7 @@ export const consoleBus = {
 }
 export type Deal = {
   id: number; agent_id: string; agent_name: string; agent_team?: string; property_address: string; buyer_names: string
+  listing_agent_email?: string | null; listing_agent_name?: string
   status: string; status_display: string; docusign_envelope_id: string | null
   draft_pdf_url: string | null; signed_pdf_url: string | null; is_archived: boolean
   acceptance_date: string | null; form_snapshot: Record<string, any> | null; updated_at: string
@@ -119,6 +120,7 @@ export const api = {
     patchUser: (id: string, body: Record<string, unknown>) => request<PortalUser>(`/api/dev/users/${id}/`, { method: 'PATCH', body: JSON.stringify(body) }),
     deleteUser: (id: string, confirmDeals = false) => request<void>(`/api/dev/users/${id}/`, { method: 'DELETE', body: JSON.stringify({ confirm_deals: confirmDeals }) }),
   },
+  patchDocument: (id: number, docId: number, status: 'received' | 'rejected' | 'signed') => request<DealDocument>(`/api/deals/${id}/documents/${docId}/`, { method: 'PATCH', body: JSON.stringify({ status }) }),
   uploadDocument: (id: number, file: File, docType: string) => {
     const form = new FormData()
     form.append('file', file); form.append('doc_type', docType); form.append('direction', 'received')

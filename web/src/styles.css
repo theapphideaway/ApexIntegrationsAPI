@@ -99,3 +99,6 @@ a.btnlink{background:#0a66c2;color:#fff;border-radius:8px;padding:8px 12px;font-
 .master{border:1px solid #e3e5e8;border-radius:10px;padding:10px 12px;margin-bottom:14px;background:#fafafa}.master .check{flex-direction:row;align-items:flex-start;gap:10px;font-size:13px;color:#1c1c1e}
 .envtoggle{border:1px solid;border-radius:999px;padding:3px 10px;font-size:11px;font-weight:700;letter-spacing:.04em;cursor:pointer}
 .envtoggle.test{background:#fef3c7;color:#92400e;border-color:#fcd34d}.envtoggle.prod{background:#fee2e2;color:#991b1b;border-color:#fca5a5}
+
+.banner .row{gap:8px;align-items:center}.banner button.link.inv{color:#fff;text-decoration:underline}
+.doc .fwd{margin-top:6px;font-size:13px;font-weight:600;color:#b45309}

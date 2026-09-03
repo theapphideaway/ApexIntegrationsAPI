@@ -59,7 +59,10 @@ export default function DealPage({ me }: { me: Me }) {
       {counter && (
         <div className="banner">
           <div><b>{counter.title} received</b> — <a className="inv" href={counter.signed_pdf_url || counter.pdf_url || '#'} target="_blank" rel="noreferrer">open the counter offer →</a></div>
-          <button className="primary inv" onClick={() => setShowCounter('respond')}>Respond</button>
+          <div className="row">
+            <button className="link inv" onClick={async () => { if (!confirm('Mark this counter as rejected? The banner goes away; the document stays.')) return; await api.patchDocument(id, counter.id, 'rejected'); await loadDocs() }}>Mark rejected</button>
+            <button className="primary inv" onClick={() => setShowCounter('respond')}>Respond</button>
+          </div>
         </div>
       )}
 
@@ -113,11 +116,17 @@ export default function DealPage({ me }: { me: Me }) {
           <div className="doclist">
             {deal.signed_pdf_url && <a className="doc ok" href={deal.signed_pdf_url} target="_blank" rel="noreferrer"><b>Executed Packet</b><span>Signed by all parties</span></a>}
             {deal.draft_pdf_url && <a className="doc" href={deal.draft_pdf_url} target="_blank" rel="noreferrer"><b>Offer Packet</b><span>As sent for signature</span></a>}
-            {docs.map((d) => (
-              <a className={`doc ${d.doc_type === 're_13' ? 'warn' : ''}`} key={d.id} href={d.signed_pdf_url || d.pdf_url || '#'} target="_blank" rel="noreferrer">
-                <b>{d.title}</b><span>{d.direction === 'received' ? 'Received' : 'Sent'} · {d.status} · {new Date(d.created_at).toLocaleDateString()}</span>
-              </a>
-            ))}
+            {docs.map((d) => {
+              const forwardable = d.doc_type === 're_13' && d.direction === 'sent' && d.status === 'signed'
+              const mailto = `mailto:${deal.listing_agent_email || ''}?subject=${encodeURIComponent(`${d.title} — ${deal.property_address}`)}&body=${encodeURIComponent(`Please find the buyer-signed ${d.title} for ${deal.property_address} for your seller's signature.\n\nSigned counter offer: ${d.signed_pdf_url || ''}\n\nThank you,`)}`
+              return (
+                <div className={`doc ${d.doc_type === 're_13' ? 'warn' : ''} ${d.status === 'rejected' ? 'muted' : ''}`} key={d.id}>
+                  <a href={d.signed_pdf_url || d.pdf_url || '#'} target="_blank" rel="noreferrer"><b>{d.title}</b></a>
+                  <span>{d.direction === 'received' ? 'Received' : 'Sent'} · {d.status.replace(/_/g, ' ')} · {new Date(d.created_at).toLocaleDateString()}</span>
+                  {forwardable && <a className="fwd" href={mailto}>✉ Send to listing agent{deal.listing_agent_name ? ` (${deal.listing_agent_name})` : ''} →</a>}
+                </div>
+              )
+            })}
             {!deal.signed_pdf_url && !deal.draft_pdf_url && docs.length === 0 && <p className="muted">No documents yet.</p>}
           </div>
 

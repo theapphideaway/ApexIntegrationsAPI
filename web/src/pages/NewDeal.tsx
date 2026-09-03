@@ -73,7 +73,7 @@ export default function NewDeal({ me }: { me: Me }) {
     if (!confirm(`Send the packet to ${names} (${form.buyerEmail}${form.buyerEmailTwo ? ', ' + form.buyerEmailTwo : ''}) for signature via DocuSign ${me.docusign_env === 'production' ? 'PRODUCTION' : 'TEST'}?`)) return
     setBusy('send'); setError(null)
     try {
-      const r = await api.sendPacket(buildPacket(form, re14, agency, forms))
+      const r = await api.sendPacket(buildPacket(form, re14, agency, forms, { email: listing?.listAgentEmail, name: listing?.listAgentFullName }))
       navigate(`/deals/${r.deal_id}`)
     } catch (err) { setError(String(err)) } finally { setBusy(null) }
   }
