@@ -195,6 +195,8 @@ AWS_S3_ADDRESSING_STYLE = 'virtual'
 AWS_S3_ENDPOINT_URL = 'https://s3.us-east-2.amazonaws.com'
 FUB_CLIENT_ID = os.environ.get('FUB_CLIENT_ID', 'fallback_id_if_missing')
 FUB_CLIENT_SECRET = os.environ.get('FUB_CLIENT_SECRET', 'fallback_secret_if_missing')
+# Optional: FUB system key (X-System-Key) — enables HMAC verification of inbound webhooks.
+FUB_SYSTEM_KEY = os.environ.get('FUB_SYSTEM_KEY', '')
 
 # --- MLS (RESO Web API) — broker back-office lookup ---
 # ONE company-level credential (every app user is a licensed agent). Set these in

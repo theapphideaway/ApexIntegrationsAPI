@@ -198,3 +198,202 @@ def sync_document(user, buyer_name: str, buyer_email: str, subject: str,
     except Exception as e:
         print(f"FUB sync failed (non-fatal): {e}")
         return False
+
+
+# ---------------------------------------------------------------------------
+# Inbound: FUB → app. Webhooks are per FUB ACCOUNT (a team shares one), with a
+# hard limit of two per event, so we register once per account and put a
+# signed account token in the URL. Payloads carry ids only; we fetch the
+# resource with any connected user's token, find the person, and match the
+# deal by the buyer's email.
+# ---------------------------------------------------------------------------
+import base64
+import hashlib
+import hmac
+import json
+from datetime import datetime, timezone as dt_timezone
+
+WEBHOOK_EVENTS = [
+    "notesCreated", "tasksCreated", "tasksUpdated", "appointmentsCreated",
+    "callsCreated", "textMessagesCreated", "emailsCreated",
+    "dealsCreated", "dealsUpdated", "peopleStageUpdated",
+]
+WEBHOOK_SALT = "fub-webhook-account"
+
+
+def fetch_account_id(user) -> str:
+    """The FUB account behind this user's token (GET /v1/identity, else /v1/me)."""
+    for path in ("/identity", "/me"):
+        try:
+            res = _request(user, "GET", f"{FUB_API}{path}")
+            if res.status_code != 200:
+                continue
+            j = res.json()
+            acct = j.get("account") if isinstance(j.get("account"), dict) else None
+            for candidate in ((acct or {}).get("id"), j.get("accountId"), j.get("account_id"), j.get("account")):
+                if candidate not in (None, "", {}) and not isinstance(candidate, dict):
+                    return str(candidate)
+        except Exception as e:
+            print(f"FUB identity lookup failed via {path}: {e}")
+    return ""
+
+
+def webhook_url(account_id: str) -> str:
+    token = signing.dumps({"acct": account_id}, salt=WEBHOOK_SALT)
+    return f"https://www.apexintegrations.ai/api/auth/fub/webhook/{token}/"
+
+
+def account_from_webhook_token(token: str) -> str:
+    return signing.loads(token, salt=WEBHOOK_SALT)["acct"]   # no max_age: the URL lives in FUB
+
+
+def ensure_webhooks(user) -> dict:
+    """Register our listener for every event we consume, once per account.
+    Reuses existing registrations (FUB allows only two per event per system).
+    Returns {event: 'existing'|'created'|'failed:<reason>'}."""
+    out = {}
+    if not user.fub_access_token:
+        return {"error": "not connected"}
+    if not user.fub_account_id:
+        user.fub_account_id = fetch_account_id(user)
+        if user.fub_account_id:
+            user.save(update_fields=["fub_account_id"])
+    if not user.fub_account_id:
+        return {"error": "could not determine the FUB account id"}
+    url = webhook_url(user.fub_account_id)
+    existing = {}
+    try:
+        res = _request(user, "GET", f"{FUB_API}/webhooks")
+        if res.status_code == 200:
+            for w in res.json().get("webhooks", []):
+                if w.get("url") == url:
+                    existing[w.get("event")] = w
+    except Exception as e:
+        print(f"FUB webhook list failed: {e}")
+    for event in WEBHOOK_EVENTS:
+        if event in existing:
+            out[event] = "existing"
+            continue
+        try:
+            res = _request(user, "POST", f"{FUB_API}/webhooks", json={"event": event, "url": url})
+            out[event] = "created" if res.status_code in (200, 201) else f"failed:{res.status_code} {res.text[:80]}"
+        except Exception as e:
+            out[event] = f"failed:{e}"
+    return out
+
+
+def verify_signature(raw_body: bytes, signature: str) -> bool:
+    """FUB-Signature = HMAC-SHA256(base64(body), X-System-Key). If no system
+    key is configured we can't verify — the signed URL token is the gate."""
+    key = (getattr(settings, "FUB_SYSTEM_KEY", "") or "").strip()
+    if not key:
+        return True
+    if not signature:
+        return False
+    digest = hmac.new(key.encode(), base64.b64encode(raw_body), hashlib.sha256).hexdigest()
+    return hmac.compare_digest(digest, signature.strip())
+
+
+def _person_ids_from_resource(event: str, resource: dict) -> list:
+    if event == "peopleStageUpdated":
+        return [resource.get("id")] if resource.get("id") else []
+    ids = []
+    if resource.get("personId"):
+        ids.append(resource["personId"])
+    for key in ("people", "persons"):
+        for p in resource.get(key) or []:
+            pid = p.get("id") if isinstance(p, dict) else p
+            if pid:
+                ids.append(pid)
+    for key in ("personIds", "invitees"):
+        for p in resource.get(key) or []:
+            pid = p.get("personId") if isinstance(p, dict) else p
+            if pid:
+                ids.append(pid)
+    return [i for i in dict.fromkeys(ids)]
+
+
+def _person_emails(user, person_id) -> list:
+    res = _request(user, "GET", f"{FUB_API}/people/{person_id}")
+    if res.status_code != 200:
+        return []
+    return [(e.get("value") or "").strip().lower() for e in res.json().get("emails", []) if e.get("value")]
+
+
+def _summarize(event: str, resource: dict) -> tuple:
+    """(title, body, actor) for the activity feed."""
+    kind = event.replace("Created", "").replace("Updated", "")
+    who = resource.get("createdBy") or resource.get("userName") or resource.get("assignedUserName") or ""
+    if isinstance(who, dict):
+        who = who.get("name", "")
+    if kind == "notes":
+        return (resource.get("subject") or "Note added", resource.get("body") or "", who)
+    if kind == "tasks":
+        state = "completed" if resource.get("isCompleted") else ("updated" if "Updated" in event else "created")
+        due = resource.get("dueDate") or ""
+        return (f"Task {state}: {resource.get('name') or ''}".strip(), f"Due {due}" if due else "", who)
+    if kind == "appointments":
+        return (f"Appointment: {resource.get('title') or ''}".strip(), f"{resource.get('start') or ''} {resource.get('location') or ''}".strip(), who)
+    if kind == "calls":
+        return (f"Call ({resource.get('outcome') or 'logged'})", resource.get("note") or "", who)
+    if kind == "textMessages":
+        return ("Text message" + (" sent" if resource.get("isIncoming") is False else " received"), resource.get("message") or "", who)
+    if kind == "emails":
+        return (f"Email: {resource.get('subject') or ''}".strip(), "", who)
+    if kind == "deals":
+        return (f"FUB deal {'updated' if 'Updated' in event else 'created'}: {resource.get('name') or ''}".strip(),
+                f"Stage: {resource.get('stageName') or resource.get('stage') or ''}".strip(), who)
+    if kind == "peopleStage":
+        return (f"Stage changed: {resource.get('stage') or ''}".strip(), "", who)
+    return (event, "", who)
+
+
+def process_webhook(account_id: str, payload: dict) -> int:
+    """Turn one FUB event into DealActivity rows. Returns rows created."""
+    from .models import CustomUser, Deal, DealActivity
+    event = payload.get("event") or ""
+    ids = payload.get("resourceIds") or []
+    if not event or not ids:
+        return 0
+    users = list(CustomUser.objects.filter(fub_account_id=account_id).exclude(fub_access_token__isnull=True).exclude(fub_access_token=""))
+    if not users:
+        return 0
+    org_ids = {u.organization_id for u in users if u.organization_id}
+    user = users[0]
+    created = 0
+    kind = event.replace("Created", "").replace("Updated", "").replace("Deleted", "")
+    path = {"peopleStage": "people"}.get(kind, kind)
+    when = payload.get("eventCreated")
+    try:
+        occurred = datetime.fromisoformat(str(when).replace("Z", "+00:00")) if when else datetime.now(dt_timezone.utc)
+    except ValueError:
+        occurred = datetime.now(dt_timezone.utc)
+    for rid in ids[:20]:
+        external_id = f"{event}:{rid}"
+        if DealActivity.objects.filter(external_id=external_id).exists():
+            continue
+        try:
+            res = _request(user, "GET", f"{FUB_API}/{path}/{rid}")
+            if res.status_code != 200:
+                continue
+            resource = res.json()
+        except Exception as e:
+            print(f"FUB resource fetch failed {path}/{rid}: {e}")
+            continue
+        emails = set()
+        for pid in _person_ids_from_resource(event, resource)[:5]:
+            emails.update(_person_emails(user, pid))
+        if not emails:
+            continue
+        deals = Deal.objects.filter(buyer_email__in=list(emails), agent__organization_id__in=org_ids, is_archived=False)
+        if not deals.exists():
+            continue
+        title, body, actor = _summarize(event, resource)
+        for i, deal in enumerate(deals[:5]):
+            DealActivity.objects.get_or_create(
+                external_id=external_id if i == 0 else f"{external_id}:{deal.id}",
+                defaults={"deal": deal, "source": "fub", "kind": event, "title": title[:255], "body": body[:5000],
+                          "actor": str(actor)[:150], "external_url": payload.get("uri") or "", "occurred_at": occurred},
+            )
+            created += 1
+    return created

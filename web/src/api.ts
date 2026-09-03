@@ -6,7 +6,7 @@ const REFRESH = 'portal_refresh'
 
 export type Me = { id: string; email: string; first_name: string; last_name: string; role: 'admin' | 'tc' | 'agent'; organization: string | null; is_superuser?: boolean; docusign_production?: boolean; docusign_env?: 'demo' | 'production' }
 export type Team = { id: string; name: string; plan_type: string; is_active: boolean; created_at: string; member_count?: number; deal_count?: number }
-export type PortalUser = Me & { phone_number: string | null; organization_name: string | null; deal_count: number; fub_connected: boolean; is_active: boolean }
+export type PortalUser = Me & { phone_number: string | null; organization_name: string | null; deal_count: number; fub_connected: boolean; fub_account_id?: string; is_active: boolean }
 export type DevSettings = {
   settings: Record<string, unknown>; defaults: Record<string, unknown>
   docusign: { current: 'demo' | 'production'; master_production: boolean; production_users: number; environments: Record<string, { auth_server: string; base_path: string; client_id_set: boolean; user_id_set: boolean; account_id_set: boolean; private_key_present: boolean; private_key_path: string; configured: boolean }> }
@@ -33,6 +33,7 @@ export type DealDocument = {
   id: number; doc_type: string; title: string; direction: 'received' | 'sent'; sequence: number
   status: string; pdf_url: string | null; signed_pdf_url: string | null; created_at: string
 }
+export type DealActivity = { id: number; source: string; kind: string; title: string; body: string; actor: string; external_url: string; occurred_at: string }
 export type DealState = { checklist_state: Record<string, string>; form_snapshot: Record<string, unknown> | null; acceptance_date: string | null }
 
 export const auth = {
@@ -105,6 +106,8 @@ export const api = {
   dealState: (id: number) => request<DealState>(`/api/deals/${id}/state/`),
   patchChecklist: (id: number, statuses: Record<string, string>) => request<DealState>(`/api/deals/${id}/state/`, { method: 'PATCH', body: JSON.stringify({ checklist_state: statuses }) }),
   documents: (id: number) => request<DealDocument[]>(`/api/deals/${id}/documents/`),
+  activity: (id: number) => request<DealActivity[]>(`/api/deals/${id}/activity/`),
+  fubRegisterWebhooks: (userId?: string) => request<Record<string, string>>('/api/auth/fub/webhooks/', { method: 'POST', body: JSON.stringify(userId ? { user_id: userId } : {}) }),
   sendDocument: (id: number, body: { doc_type: string; fields: Record<string, unknown>; buyers?: { name: string; email: string }[]; resulting_terms?: Record<string, unknown>; source_document_id?: number }) =>
     request<DealDocument>(`/api/deals/${id}/documents/send/`, { method: 'POST', body: JSON.stringify(body) }),
   // ---- Team admin (role admin; own team only) ----

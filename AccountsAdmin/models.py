@@ -99,6 +99,9 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     docusign_production = models.BooleanField(default=False)
     fub_access_token = models.TextField(blank=True, null=True)
     fub_refresh_token = models.TextField(blank=True, null=True)
+    # The FUB account this user's tokens belong to (a team shares one FUB
+    # account; inbound webhooks are registered once per account).
+    fub_account_id = models.CharField(max_length=64, blank=True, default='')
 
     objects = CustomUserManager()
 
@@ -230,3 +233,26 @@ class AppSetting(models.Model):
 
     def __str__(self):
         return f"{self.key}={self.value}"
+
+
+class DealActivity(models.Model):
+    """Something that happened on a deal outside this app — today: Follow Up
+    Boss events (notes, tasks, calls, texts, appointments, stage changes)
+    matched to the deal by the buyer's email. Idempotent on external_id."""
+    SOURCE_CHOICES = (('fub', 'Follow Up Boss'), ('app', 'App'))
+    deal = models.ForeignKey(Deal, on_delete=models.CASCADE, related_name='activities')
+    source = models.CharField(max_length=10, choices=SOURCE_CHOICES, default='fub')
+    kind = models.CharField(max_length=40)              # e.g. notesCreated, tasksCreated
+    title = models.CharField(max_length=255)
+    body = models.TextField(blank=True, default='')
+    actor = models.CharField(max_length=150, blank=True, default='')   # who did it in FUB
+    external_id = models.CharField(max_length=120, unique=True)        # "<event>:<resourceId>"
+    external_url = models.TextField(blank=True, default='')
+    occurred_at = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-occurred_at']
+
+    def __str__(self):
+        return f"{self.deal_id} {self.kind} {self.title}"

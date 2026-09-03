@@ -109,7 +109,7 @@ export default function Dev({ me }: { me: Me }) {
                 </button>
                 {u.docusign_production && u.docusign_env !== 'production' && <span className="muted small" title="Flagged for production but the master switch is off or prod isn't configured — still sending on test."> → test</span>}
               </td>
-              <td>{u.fub_connected ? <span className="status ok">linked</span> : <span className="muted">—</span>}</td>
+              <td>{u.fub_connected ? <><span className="status ok">linked</span> <button className="link small" disabled={busy !== null} title={`Register inbound webhooks on FUB account ${u.fub_account_id || '?'}`} onClick={async () => { setBusy('fub'); try { const r = await api.fubRegisterWebhooks(u.id); setTestResult(JSON.stringify(r, null, 2)) } catch (e) { setError(String(e)) } finally { setBusy(null) } }}>listeners</button></> : <span className="muted">—</span>}</td>
               <td><input type="checkbox" checked={u.is_active} disabled={u.id === me.id} onChange={(e) => run('user', () => api.dev.patchUser(u.id, { is_active: e.target.checked }))} /></td>
               <td className="right">{u.id !== me.id && <button className="link danger" onClick={() => { if (!confirm(`Delete ${u.email}?`)) return; run('del', async () => { try { await api.dev.deleteUser(u.id) } catch (err) { if (String(err).includes('owns') && confirm(`${err}\n\nDelete the user AND their deals?`)) await api.dev.deleteUser(u.id, true); else throw err } }) }}>Delete</button>}</td>
             </tr>))}</tbody>

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { api, type Deal, type DealDocument, type DealState, type Me } from '../api'
+import { api, type Deal, type DealDocument, type DealState, type DealActivity, type Me } from '../api'
 import { PHASES, STATUSES, isDone } from '../checklist'
 import { computeDeadlines, urgency } from '../deadlines'
 import CounterForm from '../components/CounterForm'
@@ -25,6 +25,7 @@ export default function DealPage({ me }: { me: Me }) {
   const [deal, setDeal] = useState<Deal | null>(null)
   const [state, setState] = useState<DealState | null>(null)
   const [docs, setDocs] = useState<DealDocument[]>([])
+  const [activity, setActivity] = useState<DealActivity[]>([])
   const [error, setError] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
   const [dragOver, setDragOver] = useState(false)
@@ -38,6 +39,9 @@ export default function DealPage({ me }: { me: Me }) {
     Promise.all([api.deal(id), api.dealState(id), api.documents(id)])
       .then(([d, s, docs]) => { setDeal(d); setState(s); setDocs(docs) })
       .catch((e) => setError(String(e)))
+    api.activity(id).then(setActivity).catch(() => setActivity([]))
+    const t = setInterval(() => api.activity(id).then(setActivity).catch(() => {}), 60_000)
+    return () => clearInterval(t)
   }, [id])
 
   async function setStatus(key: string, status: string) {
@@ -170,6 +174,19 @@ export default function DealPage({ me }: { me: Me }) {
           {error && <p className="error">{error}</p>}
         </section>
       </div>
+
+      <section className="card" style={{ marginTop: 20 }}>
+        <div className="cardhead"><h2>Activity from Follow Up Boss</h2><span className="muted small">notes · tasks · calls · texts · stage changes on this buyer</span></div>
+        {activity.length === 0 && <p className="muted small">Nothing yet. Activity appears here within a minute of it happening in FUB (once the agent's FUB is connected with listeners registered).</p>}
+        <div className="feed">
+          {activity.map((a) => (
+            <div className="feeditem" key={a.id}>
+              <div className="feedwhen">{new Date(a.occurred_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</div>
+              <div><b>{a.title}</b>{a.actor && <span className="muted small"> · {a.actor}</span>}{a.body && <div className="feedbody">{a.body}</div>}</div>
+            </div>
+          ))}
+        </div>
+      </section>
     </>
   )
 }

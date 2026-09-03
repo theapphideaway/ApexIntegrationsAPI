@@ -110,3 +110,7 @@ a.btnlink{background:#0a66c2;color:#fff;border-radius:8px;padding:8px 12px;font-
 
 .inline.title{font-size:24px;font-weight:700;padding:2px 6px;width:auto;min-width:280px}
 .notice{color:#166534;background:#dcfce7;border-radius:8px;padding:8px 12px;font-size:14px}
+
+.feed{display:flex;flex-direction:column}.feeditem{display:grid;grid-template-columns:130px 1fr;gap:12px;padding:8px 0;border-top:1px solid #eef0f2;font-size:14px}
+.feedwhen{color:#6b7280;font-size:12px;padding-top:2px}.feedbody{color:#4b5563;font-size:13px;white-space:pre-wrap;margin-top:2px}
+button.link.small{font-size:11px}

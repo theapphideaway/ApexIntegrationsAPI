@@ -1,4 +1,5 @@
 import base64
+import json
 import logging
 import os
 import traceback
@@ -30,7 +31,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import Organization, CustomUser, OTPCode, Deal, DealDocument
+from .models import Organization, CustomUser, OTPCode, Deal, DealDocument, DealActivity
 from .serializers import OrganizationSerializer, CustomUserSerializer, DealSerializer, DealDocumentSerializer
 from django.core.mail import send_mail, EmailMessage
 from django.conf import settings
@@ -1197,6 +1198,75 @@ class FUBStatusView(APIView):
         return Response({"connected": False})
 
 
+class FUBWebhookView(APIView):
+    """POST /api/auth/fub/webhook/<token>/ — Follow Up Boss event delivery.
+    The signed token names the FUB account; the body is HMAC-verified when
+    FUB_SYSTEM_KEY is configured. Always answers fast: FUB retries on non-2xx."""
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def post(self, request, token):
+        from django.core import signing as dj_signing
+        try:
+            account_id = fub_service.account_from_webhook_token(token)
+        except dj_signing.BadSignature:
+            return Response({"error": "bad token"}, status=403)
+        if not fub_service.verify_signature(request.body, request.headers.get("FUB-Signature", "")):
+            return Response({"error": "bad signature"}, status=403)
+        try:
+            payload = json.loads(request.body or b"{}")
+        except ValueError:
+            return Response({"error": "bad json"}, status=400)
+        try:
+            created = fub_service.process_webhook(account_id, payload)
+        except Exception as e:
+            print(f"FUB webhook processing failed: {e}")
+            created = 0
+        return Response({"ok": True, "activities": created})
+
+
+class FUBWebhooksRegisterView(APIView):
+    """POST /api/auth/fub/webhooks/ — (re)register our listeners for this
+    agent's FUB account; GET shows what's registered."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if not request.user.fub_access_token:
+            return Response({"connected": False, "webhooks": []})
+        res = fub_service._request(request.user, "GET", f"{fub_service.FUB_API}/webhooks")
+        hooks = res.json().get("webhooks", []) if res.status_code == 200 else []
+        ours = [h for h in hooks if "apexintegrations.ai" in (h.get("url") or "")]
+        return Response({"connected": True, "account_id": request.user.fub_account_id, "webhooks": ours,
+                         "signature_verification": bool(getattr(settings, "FUB_SYSTEM_KEY", ""))})
+
+    def post(self, request):
+        target = request.user
+        # The platform owner can register listeners for any connected agent
+        # (existing connections predate inbound sync).
+        if request.user.is_superuser and request.data.get("user_id"):
+            target = CustomUser.objects.filter(pk=request.data["user_id"]).first() or request.user
+        if not target.fub_access_token:
+            return Response({"error": "Follow Up Boss is not connected for that user."}, status=400)
+        result = fub_service.ensure_webhooks(target)
+        result["account_id"] = target.fub_account_id
+        return Response(result)
+
+
+class DealActivityView(APIView):
+    """GET /api/deals/<pk>/activity/ — what happened on this deal in FUB."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        deal = deals_for(request.user).filter(pk=pk).first()
+        if deal is None:
+            return Response({"error": "Not found."}, status=404)
+        rows = deal.activities.all()[:100]
+        return Response([{
+            "id": a.id, "source": a.source, "kind": a.kind, "title": a.title, "body": a.body, "actor": a.actor,
+            "external_url": a.external_url, "occurred_at": a.occurred_at.isoformat(),
+        } for a in rows])
+
+
 class FUBBackfillView(APIView):
     """POST /api/auth/fub/backfill/ — sync any of the agent's not-yet-synced
     deals to FUB. The connect flow runs this automatically; this endpoint
@@ -1248,6 +1318,11 @@ class FUBAuthCallbackView(APIView):
 
             # Catch the CRM up on the agent's existing pipeline.
             count = fub_service.backfill_deals(user)
+            # And start listening: FUB → app (notes, tasks, calls, stage changes).
+            try:
+                fub_service.ensure_webhooks(user)
+            except Exception as e:
+                print(f"FUB webhook registration failed (non-fatal): {e}")
             print(f"FUB backfill: synced {count} existing deal(s) for {user.email}")
 
             return self.custom_redirect('apexapp://fub-callback?status=success')

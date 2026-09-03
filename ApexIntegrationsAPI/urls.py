@@ -24,7 +24,7 @@ from django.urls import re_path
 from django.views.static import serve as static_serve
 from AccountsAdmin import dev_views, team_views
 from AccountsAdmin.views import (
-    portal_index, DealArchiveView, DealDocumentsView, DealDocumentDetailView, DealDocumentSendView, DealStateView,
+    portal_index, DealArchiveView, DealDocumentsView, DealDocumentDetailView, DealDocumentSendView, DealStateView, DealActivityView,
     docusign_webhook,
     RE21ContractStatusEndpoint,
     AgentDealsListCreateView,
@@ -53,6 +53,7 @@ urlpatterns = [
     path('api/deals/<int:pk>/documents/send/', DealDocumentSendView.as_view(), name='deal-document-send'),
     path('api/deals/<int:pk>/documents/<int:doc_id>/', DealDocumentDetailView.as_view(), name='deal-document-detail'),
     path('api/deals/<int:pk>/state/', DealStateView.as_view(), name='deal-state'),
+    path('api/deals/<int:pk>/activity/', DealActivityView.as_view(), name='deal-activity'),
 
     path('api/mls/listing/<str:mls_number>/', MLSListingProxyView.as_view(), name='mls_listing'),
     path('api/mls/search/', MLSAddressSearchView.as_view(), name='mls_search'),

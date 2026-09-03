@@ -109,6 +109,7 @@ class DevUsersView(APIView):
             d["organization_name"] = u.organization.name if u.organization else None
             d["deal_count"] = u.deals.count() if hasattr(u, "deals") else Deal.objects.filter(agent=u).count()
             d["fub_connected"] = bool(u.fub_access_token)
+            d["fub_account_id"] = u.fub_account_id
             d["is_active"] = u.is_active
             out.append(d)
         return Response(out)
