@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { api, auth, type Me } from '../api'
+import { applyTheme, getTheme } from '../theme'
 
 export default function Login({ onLoggedIn }: { onLoggedIn: (me: Me) => void }) {
   const [email, setEmail] = useState('')
@@ -7,6 +8,7 @@ export default function Login({ onLoggedIn }: { onLoggedIn: (me: Me) => void }) 
   const [stage, setStage] = useState<'email' | 'code'>('email')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [theme, setTheme] = useState(getTheme())
 
   async function sendCode(e: React.FormEvent) {
     e.preventDefault(); setBusy(true); setError(null)
@@ -27,7 +29,7 @@ export default function Login({ onLoggedIn }: { onLoggedIn: (me: Me) => void }) 
   return (
     <div className="auth">
       <section className="authbrand">
-        <div className="brandmark" style={{ padding: 0 }}><span className="logo">A</span><div><b>Apex Deal Desk</b><span>TC platform</span></div></div>
+        <div className="brandmark" style={{ padding: 0 }}><span className="logo">D</span><div><b>Docuflow</b><span>Dashboard</span></div></div>
         <div>
           <h2>Every deal, every deadline, every document — in one place.</h2>
           <p>From MLS listing to executed packet: prefilled Idaho forms, DocuSign signatures, counter offers, and a live checklist your whole team works from.</p>
@@ -37,7 +39,10 @@ export default function Login({ onLoggedIn }: { onLoggedIn: (me: Me) => void }) 
             <li>Drag-and-drop documents, counters signed in a click</li>
           </ul>
         </div>
-        <p className="small" style={{ color: '#7f95ab' }}>© Apex Integrations</p>
+        <div className="row" style={{ alignItems: 'center', justifyContent: 'space-between' }}>
+          <p className="small" style={{ color: '#7f95ab', margin: 0 }}>© Apex Integrations</p>
+          <button type="button" className="themebtn" onClick={() => { const t = theme === 'dark' ? 'light' : 'dark'; setTheme(t); applyTheme(t) }}>{theme === 'dark' ? '☀ Light mode' : '☾ Dark mode'}</button>
+        </div>
       </section>
       <section className="authform">
         <form className="card login" onSubmit={stage === 'email' ? sendCode : verify}>

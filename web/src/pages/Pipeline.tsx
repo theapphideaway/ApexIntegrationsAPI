@@ -69,7 +69,7 @@ export default function Pipeline({ me }: { me: Me }) {
 
       {groups.map((g) => (
         <div key={g.agent ?? 'all'} className="group">
-          {g.agent && <h2 className="grouphead"><span className="avatar sm" style={{ background: '#e2e8f0', color: '#334155', border: 0 }}>{initials(...(g.agent.split(' · ')[0].split(' ') as [string, string]))}</span>{g.agent} <span className="muted">· {g.deals.length} deal{g.deals.length === 1 ? '' : 's'}</span></h2>}
+          {g.agent && <h2 className="grouphead"><span className="avatar sm" style={{ background: 'var(--fill)', color: 'var(--fill-ink)', border: 0 }}>{initials(...(g.agent.split(' · ')[0].split(' ') as [string, string]))}</span>{g.agent} <span className="muted">· {g.deals.length} deal{g.deals.length === 1 ? '' : 's'}</span></h2>}
           <div className="deals">
             {g.deals.map((d) => {
               const nd = nextDeadline(d)
