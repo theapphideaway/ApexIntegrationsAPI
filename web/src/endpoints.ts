@@ -28,6 +28,9 @@ export function catalog(pf: Prefill): Endpoint[] {
     { id: 'deal-delete', group: 'Deals', method: 'DELETE', path: '/api/deals/:id/', title: 'Delete deal (voids envelope)', params: { id: pf.dealId }, danger: 'Deletes the deal, voids its DocuSign envelope, removes its files.' },
     { id: 'state-get', group: 'Deals', method: 'GET', path: '/api/deals/:id/state/', title: 'Deal state (checklist, snapshot, acceptance)', params: { id: pf.dealId } },
     { id: 'state-patch', group: 'Deals', method: 'PATCH', path: '/api/deals/:id/state/', title: 'Merge checklist statuses', params: { id: pf.dealId }, body: { checklist_state: { 'p1.3': 'Complete' } } },
+    { id: 'deal-reconcile', group: 'Deals', method: 'POST', path: '/api/deals/:id/reconcile/', title: 'Check signing status (files if completed)', params: { id: pf.dealId }, body: {} },
+    { id: 'deal-remind', group: 'Deals', method: 'POST', path: '/api/deals/:id/remind/', title: 'Resend signing email (reminder)', params: { id: pf.dealId }, body: {}, danger: 'Emails every pending signer again.' },
+    { id: 'deal-correct', group: 'Deals', method: 'POST', path: '/api/deals/:id/correct-recipient/', title: 'Fix a signer email + resend', params: { id: pf.dealId }, body: { recipient_id: '1', new_email: pf.email }, danger: 'Changes the recipient on the live envelope and emails them.' },
     { id: 'activity', group: 'Deals', method: 'GET', path: '/api/deals/:id/activity/', title: 'FUB activity on the deal', params: { id: pf.dealId } },
 
     // ---- Drafts ----

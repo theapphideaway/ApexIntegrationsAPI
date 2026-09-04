@@ -686,220 +686,177 @@ class SendOnboardingBundleEndpoint(APIView):
 @csrf_exempt
 @api_view(['POST'])
 @permission_classes([AllowAny])
-def docusign_webhook(request):
-    print("\n================ 📡 WEBHOOK HIT ================")
+def file_completed_envelope(envelope_id: str, documents: list) -> dict:
+    """The single place an envelope becomes 'done': merge the signed documents,
+    store the packet (+ RE-21-only copy), update the Deal or DealDocument, CRM
+    note, live push. Called by the Connect webhook AND by reconciliation
+    (check-now / hourly sweep) when the webhook never arrived.
+    `documents` = [(name, pdf_bytes), …] without the certificate."""
+    merged_pdf = pymupdf.open()
+    merged_count = 0
+    re21_only_bytes = None
+    try:
+        for name, raw in documents:
+            if not raw:
+                continue
+            doc_name = str(name or "").upper().replace("_", " ").replace("-", " ")
+            if "RE 21" in doc_name:
+                re21_only_bytes = raw
+            part = pymupdf.open("pdf", raw)
+            merged_pdf.insert_pdf(part)
+            part.close()
+            merged_count += 1
+        if merged_count == 0:
+            return {"ok": False, "error": "no documents"}
+        pdf_bytes = merged_pdf.tobytes(garbage=4, deflate=True)
+    finally:
+        merged_pdf.close()
 
+    saved_path = default_storage.save(f"signed_contracts/signed_re21_{envelope_id}.pdf", ContentFile(pdf_bytes))
+    re21_only_path = None
+    if re21_only_bytes:
+        try:
+            re21_only_path = default_storage.save(
+                f"signed_contracts/signed_re21_only_{envelope_id}.pdf", ContentFile(re21_only_bytes))
+        except Exception as e:
+            print(f"RE-21-only save failed (non-fatal): {e}")
+
+    deal = Deal.objects.filter(docusign_envelope_id=envelope_id).first()
+    if deal is not None:
+        deal.status = 'fully_executed'
+        deal.signed_pdf_url = saved_path
+        if re21_only_path:
+            deal.signed_re21_url = re21_only_path
+        if deal.acceptance_date is None:
+            deal.acceptance_date = timezone.now()
+        deal.save()
+        try:
+            signed_link = default_storage.url(saved_path)
+        except Exception:
+            signed_link = None
+        link_html = f'<p>📄 <a href="{signed_link}" target="_blank">View the executed packet</a></p>' if signed_link else ""
+        if not deal.is_test and fub_service.sync_document(
+            deal.agent, buyer_name=deal.buyer_names, buyer_email=deal.buyer_email or "",
+            subject=f"Contract fully executed — {deal.property_address}",
+            body_html=(f"<p><strong>Apex Integrations AI</strong>: all parties have signed.</p>"
+                       f"<p>Property: {deal.property_address}<br>Buyer(s): {deal.buyer_names}</p>{link_html}"),
+        ):
+            deal.fub_synced = True
+            deal.save(update_fields=["fub_synced"])
+        try:
+            pusher_client.trigger(f"deal_{deal.id}", 're-21_signed',
+                                  {'envelope_id': envelope_id, 'status': 'fully_executed', 'signed_pdf_url': saved_path})
+        except Exception as push_err:
+            print(f"Pusher push failed (non-fatal): {push_err}")
+        return {"ok": True, "matched": "deal", "deal_id": deal.id}
+
+    doc = DealDocument.objects.filter(docusign_envelope_id=envelope_id).first()
+    if doc is not None:
+        doc.signed_pdf_key = saved_path
+        doc.status = 'signed'
+        doc.save(update_fields=['signed_pdf_key', 'status'])
+        try:
+            pusher_client.trigger(f"deal_{doc.deal_id}", 'document_signed', {'document_id': doc.id, 'envelope_id': envelope_id})
+        except Exception:
+            pass
+        return {"ok": True, "matched": "document", "deal_id": doc.deal_id, "document_id": doc.id}
+    return {"ok": True, "matched": None}
+
+
+TERMINAL_ENVELOPE = ("voided", "declined", "deleted")
+
+
+def reconcile_envelope(envelope_id: str, env: str, current_status: str) -> dict:
+    """Ask DocuSign where an envelope stands and file it if it completed
+    without the webhook. Returns the status bundle (+ 'action')."""
+    ds = DocuSignService(env=env)
+    info = ds.envelope_status(envelope_id)
+    info["action"] = "none"
+    if info["status"] == "completed" and current_status not in ("fully_executed", "signed"):
+        docs = ds.envelope_documents(envelope_id)
+        result = file_completed_envelope(envelope_id, docs)
+        info["action"] = "filed" if result.get("ok") else f"file_failed:{result.get('error')}"
+    elif info["status"] in TERMINAL_ENVELOPE:
+        info["action"] = info["status"]
+    return info
+
+
+def reconcile_deal(deal) -> dict:
+    if not deal.docusign_envelope_id:
+        return {"status": "no_envelope", "recipients": [], "action": "none"}
+    info = reconcile_envelope(deal.docusign_envelope_id, deal.docusign_env, deal.status)
+    if info["action"] in TERMINAL_ENVELOPE and deal.status in ("out_for_signature", "signed_by_buyers"):
+        deal.status = "cancelled"
+        deal.save(update_fields=["status"])
+    return info
+
+
+def reconcile_document(doc) -> dict:
+    if not doc.docusign_envelope_id:
+        return {"status": "no_envelope", "recipients": [], "action": "none"}
+    info = reconcile_envelope(doc.docusign_envelope_id, doc.docusign_env, doc.status)
+    if info["action"] in TERMINAL_ENVELOPE and doc.status == "out_for_signature":
+        doc.status = "rejected"
+        doc.save(update_fields=["status"])
+    return info
+
+
+def docusign_webhook(request):
     try:
         data = request.data
         event = data.get("event")
-        print(f"📊 [TRACE 1] Received Webhook Event: '{event}'")
-
         if event == "envelope-completed":
             envelope_id = data.get("data", {}).get("envelopeId")
-            print(f"📂 [TRACE 2] Envelope {envelope_id} is FULLY SIGNED!")
-
             documents = data.get("data", {}).get("envelopeSummary", {}).get("envelopeDocuments", [])
-            print(f"📊 [TRACE 3] Found {len(documents)} document(s) in payload.")
-
             if not documents:
-                print("⚠️ [TRACE 3a] No documents array found in DocuSign payload!")
                 return Response({"status": "error", "message": "No documents provided"}, status=400)
-
-            # Merge EVERY signed document in the envelope (agency disclosure,
-            # RE-14, RE-21, …) into one PDF — taking only documents[0] dropped
-            # all but the first form from the stored packet. DocuSign's
-            # certificate-of-completion summary doc is skipped.
-            merged_pdf = pymupdf.open()
-            merged_count = 0
-            re21_only_bytes = None   # the executed RE-21 alone → title / lender copy
-            try:
-                for doc_info in documents:
-                    if str(doc_info.get("documentId", "")).lower() == "certificate" \
-                            or str(doc_info.get("type", "")).lower() == "summary":
-                        continue
-                    doc_b64 = doc_info.get("PDFBytes")
-                    if not doc_b64:
-                        continue
-                    raw = base64.b64decode(doc_b64)
-                    doc_name = str(doc_info.get("name", "")).upper().replace("_", " ").replace("-", " ")
-                    if "RE 21" in doc_name:
-                        re21_only_bytes = raw
-                    part = pymupdf.open("pdf", raw)
-                    merged_pdf.insert_pdf(part)
-                    part.close()
-                    merged_count += 1
-
-                # 💡 THE HIDDEN CRASH TRAP:
-                # If "Include Document PDFs" is not checked in DocuSign Connect, PDFBytes is None!
-                if merged_count == 0:
-                    print("🚨 [CRASH CAUGHT] No PDFBytes on any document! DocuSign Connect is not sending file bytes.")
-                    print("👉 Fix: In DocuSign Admin -> Connect, make sure 'Include Document PDFs' is CHECKED.")
-                    return Response({"status": "error", "message": "Missing PDFBytes"}, status=400)
-
-                pdf_bytes = merged_pdf.tobytes(garbage=4, deflate=True)
-            finally:
-                merged_pdf.close()
-            print(f"📊 [TRACE 4-5] Merged {merged_count} signed document(s) into one PDF (Size: {len(pdf_bytes)} bytes)")
-
-            # S3 File Upload
-            s3_filename = f"signed_contracts/signed_re21_{envelope_id}.pdf"
-            print(f"📊 [TRACE 6] Attempting S3 storage save to path: '{s3_filename}'")
-
-            try:
-                saved_path = default_storage.save(s3_filename, ContentFile(pdf_bytes))
-                print(f"💾 [TRACE 7] S3 Upload successful! File saved at: '{saved_path}'")
-            except Exception as s3_err:
-                print("🚨 [CRASH CAUGHT] AWS S3 Upload failed! Check your AWS credentials or bucket permissions.")
-                raise s3_err
-            # The executed RE-21 by itself — what title and the lender receive.
-            re21_only_path = None
-            if re21_only_bytes:
+            pairs = []
+            for doc_info in documents:
+                if str(doc_info.get("documentId", "")).lower() == "certificate" \
+                        or str(doc_info.get("type", "")).lower() == "summary":
+                    continue
+                doc_b64 = doc_info.get("PDFBytes")
+                if doc_b64:
+                    pairs.append((doc_info.get("name", ""), base64.b64decode(doc_b64)))
+            if not pairs:
+                # "Include Document PDFs" is off in Connect — pull them ourselves.
+                deal = Deal.objects.filter(docusign_envelope_id=envelope_id).first()
+                doc = DealDocument.objects.filter(docusign_envelope_id=envelope_id).first() if deal is None else None
+                env = (deal or doc).docusign_env if (deal or doc) else "demo"
                 try:
-                    re21_only_path = default_storage.save(
-                        f"signed_contracts/signed_re21_only_{envelope_id}.pdf", ContentFile(re21_only_bytes))
+                    pairs = DocuSignService(env=env).envelope_documents(envelope_id)
                 except Exception as e:
-                    print(f"RE-21-only save failed (non-fatal): {e}")
-
-            # Postgres Database Lookup
-            print(f"📊 [TRACE 8] Querying Postgres for Deal with envelope_id: '{envelope_id}'")
-            try:
-                deal = Deal.objects.get(docusign_envelope_id=envelope_id)
-                print(f"📊 [TRACE 9] Match found! Deal ID: {deal.id}. Address: {deal.property_address}")
-                deal.status = 'fully_executed'
-                deal.signed_pdf_url = saved_path
-                if re21_only_path:
-                    deal.signed_re21_url = re21_only_path
-                if deal.acceptance_date is None:
-                    deal.acceptance_date = timezone.now()
-                deal.save()
-                print("✅ [TRACE 10] Postgres database update successful!")
-
-                # CRM sync — the fully executed packet lands on the buyer's
-                # FUB timeline. Non-fatal by design.
-                try:
-                    signed_link = default_storage.url(saved_path)
-                except Exception:
-                    signed_link = None
-                link_html = (
-                    f'<p>📄 <a href="{signed_link}" target="_blank">View the executed packet</a></p>'
-                    if signed_link else ""
-                )
-                if not deal.is_test and fub_service.sync_document(
-                    deal.agent,
-                    buyer_name=deal.buyer_names,
-                    buyer_email=deal.buyer_email or "",
-                    subject=f"Contract fully executed — {deal.property_address}",
-                    body_html=(
-                        f"<p><strong>Apex Integrations AI</strong>: all parties have signed.</p>"
-                        f"<p>Property: {deal.property_address}<br>Buyer(s): {deal.buyer_names}</p>{link_html}"
-                    ),
-                ):
-                    deal.fub_synced = True
-                    deal.save(update_fields=["fub_synced"])
-
-            except Deal.DoesNotExist:
-                # Not the packet — maybe a DealDocument's envelope (counter,
-                # RE-10…): store its signed file and mark it signed.
-                doc = DealDocument.objects.filter(docusign_envelope_id=envelope_id).first()
-                if doc is not None:
-                    doc.signed_pdf_key = saved_path
-                    doc.status = 'signed'
-                    doc.save(update_fields=['signed_pdf_key', 'status'])
-                    print(f"✅ DealDocument {doc.id} ('{doc.title}') signed for deal {doc.deal_id}")
-                    return Response({"status": "received"}, status=200)
-                print(f"⚠️ [TRACE 9-WARN] No matching Deal row in database has docusign_envelope_id='{envelope_id}'")
-                print(
-                    "💡 Pro Tip: If you sent this via the DocuSign web dashboard instead of the iOS app, no DB row will match!")
+                    return Response({"status": "error", "message": f"Missing PDFBytes and fetch failed: {e}"}, status=400)
+            result = file_completed_envelope(envelope_id, pairs)
+            if result.get("matched") is None:
+                print("💡 No Deal/DealDocument matches this envelope (sent outside the app?)")
                 return Response({"status": "received_no_db_match"}, status=200)
-
-            # Pusher Live Sync
-            channel_name = f"deal_{deal.id}"
-            print(f"📊 [TRACE 11] Attempting Pusher broadcast to channel '{channel_name}'...")
-
-            try:
-                pusher_client.trigger(
-                    channel_name,
-                    're-21_signed',
-                    {
-                        'envelope_id': envelope_id,
-                        'status': 'fully_executed',
-                        'signed_pdf_url': saved_path
-                    }
-                )
-                print("📡 [TRACE 12] Pusher notification successfully broadcasted!")
-            except Exception as push_err:
-                print("🚨 [CRASH CAUGHT] Pusher broadcast failed! Check your keys or connection limits.")
-                raise push_err
-
-        else:
-            print(f"ℹ️ [INFO] Ignoring non-completed event type: '{event}'")
-
-        print("================ 📡 WEBHOOK SUCCESS ================ \n")
+            return Response({"status": "received", **{k: v for k, v in result.items() if k != "ok"}}, status=200)
         return Response({"status": "received"}, status=200)
-
     except Exception as e:
-        # 🚨 THE ULTIMATE SAFETY NET: Print exactly what and where the code crashed!
-        print("\n❌❌❌❌ [WEBHOOK CRITICAL RUNTIME CRASH] ❌❌❌❌")
-        print(f"Error Message: {str(e)}")
-        print("---------------- Traceback Details ----------------")
-        traceback.print_exc()  # Prints the exact line of code that failed
-        print("---------------------------------------------------\n")
+        print(f"Webhook failed: {e}")
         return Response({"status": "error", "message": str(e)}, status=500)
 
 
 class RE21ContractStatusEndpoint(APIView):
+    """GET /api/contracts/status/<envelope_id>/ — legacy shape kept for the app's
+    poll; now backed by reconciliation (files the packet if completed)."""
     permission_classes = [IsAuthenticated]
 
     def get(self, request, envelope_id, *args, **kwargs):
-        """
-        GET /api/contracts/status/<envelope_id>/
-        Checks if the contract is signed and returns the status.
-        """
-        # Only envelopes on deals this user can see (own, or team for TC/admin).
         status_deal = deals_for(request.user).filter(docusign_envelope_id=envelope_id).first()
         if status_deal is None:
             return Response({"error": "Not found."}, status=404)
         try:
-            # Talk to the account the envelope actually lives in.
-            ds_service = DocuSignService(env=status_deal.docusign_env)
-
-            # 1. Fetch Envelope Details from DocuSign
-            # We'll use the SDK's built-in call to check status
-            access_token = ds_service._get_access_token()
-            api_client = ApiClient()
-            api_client.host = ds_service.base_path
-            api_client.set_default_header("Authorization", f"Bearer {access_token}")
-
-            envelopes_api = EnvelopesApi(api_client)
-            envelope = envelopes_api.get_envelope(
-                account_id=ds_service.account_id,
-                envelope_id=envelope_id
-            )
-
-            current_status = envelope.status  # e.g., 'sent', 'delivered', 'completed'
-
-            # 2. If completed, make sure we have the file
-            if current_status == "completed":
-                # Check if we already have it in media/
-                file_name = f"signed_re21_{envelope_id}.pdf"
-                file_path = os.path.join('media', 'signed_contracts', file_name)
-
-                if not os.path.exists(file_path):
-                    # Manual Pull Triggered
-                    pdf_bytes = ds_service.download_envelope_document(envelope_id)
-                    os.makedirs(os.path.dirname(file_path), exist_ok=True)
-                    with open(file_path, "wb") as f:
-                        f.write(pdf_bytes)
-
-            return Response({
-                "envelope_id": envelope_id,
-                "status": current_status,
-                "is_completed": current_status == "completed",
-                "pdf_url": f"/media/signed_contracts/signed_re21_{envelope_id}.pdf" if current_status == "completed" else None
-            }, status=200)
-
+            info = reconcile_deal(status_deal)
         except Exception as e:
             return Response({"error": str(e)}, status=500)
+        status_deal.refresh_from_db()
+        return Response({
+            "envelope_id": envelope_id, "status": info.get("status"),
+            "is_completed": info.get("status") == "completed", "recipients": info.get("recipients", []),
+            "pdf_url": DealSerializer(status_deal).data.get("signed_pdf_url"),
+        }, status=200)
 
 
 class AgentDealsListCreateView(ListCreateAPIView):
@@ -1228,6 +1185,87 @@ class DealDraftDetailView(APIView):
     def delete(self, request, pk):
         drafts_for(request.user).filter(pk=pk).delete()
         return Response(status=204)
+
+
+class DealSigningStatusView(APIView):
+    """POST /api/deals/<pk>/reconcile/ — "check now": where the envelope stands
+    per recipient; files the executed packet if DocuSign says completed but
+    the webhook never arrived; marks voided/declined envelopes cancelled."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        deal = deals_for(request.user).filter(pk=pk).first()
+        if deal is None:
+            return Response({"error": "Not found."}, status=404)
+        try:
+            info = reconcile_deal(deal)
+        except Exception as e:
+            return Response({"error": f"DocuSign didn't answer: {e}"}, status=502)
+        deal.refresh_from_db()
+        info["deal"] = DealSerializer(deal).data
+        return Response(info)
+
+
+class DealRemindView(APIView):
+    """POST /api/deals/<pk>/remind/ — resend the signing email to everyone who
+    hasn't signed. Nothing about the packet changes."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        deal = deals_for(request.user).filter(pk=pk).first()
+        if deal is None or not deal.docusign_envelope_id:
+            return Response({"error": "Not found."}, status=404)
+        if deal.status not in ("out_for_signature", "signed_by_buyers"):
+            return Response({"error": "This envelope isn't out for signature."}, status=400)
+        try:
+            DocuSignService(env=deal.docusign_env).resend(deal.docusign_envelope_id)
+        except Exception as e:
+            return Response({"error": f"DocuSign couldn't resend: {e}"}, status=502)
+        return Response({"ok": True})
+
+
+class DealCorrectRecipientView(APIView):
+    """POST /api/deals/<pk>/correct-recipient/ {recipient_id, new_email, new_name?}
+    Fix a signer's email on the in-flight envelope (typo / bounced) and resend to
+    them — no regeneration, the packet stays as sent."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        deal = deals_for(request.user).filter(pk=pk).first()
+        if deal is None or not deal.docusign_envelope_id:
+            return Response({"error": "Not found."}, status=404)
+        rid = str(request.data.get("recipient_id") or "").strip()
+        new_email = (request.data.get("new_email") or "").strip()
+        new_name = (request.data.get("new_name") or "").strip() or None
+        if not rid or "@" not in new_email:
+            return Response({"error": "recipient_id and a valid new_email are required."}, status=400)
+        try:
+            DocuSignService(env=deal.docusign_env).correct_recipient_email(deal.docusign_envelope_id, rid, new_email, new_name)
+        except Exception as e:
+            return Response({"error": f"DocuSign couldn't update the recipient: {e}"}, status=502)
+        # Keep the deal's primary buyer email in step (recipient 1 = primary buyer).
+        if rid == "1":
+            deal.buyer_email = new_email
+            deal.save(update_fields=["buyer_email"])
+        return Response({"ok": True})
+
+
+class DealDocumentReconcileView(APIView):
+    """POST /api/deals/<pk>/documents/<doc_id>/reconcile/ — same for a counter's envelope."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk, doc_id):
+        deal = deals_for(request.user).filter(pk=pk).first()
+        doc = deal.documents.filter(pk=doc_id).first() if deal else None
+        if doc is None:
+            return Response({"error": "Not found."}, status=404)
+        try:
+            info = reconcile_document(doc)
+        except Exception as e:
+            return Response({"error": f"DocuSign didn't answer: {e}"}, status=502)
+        doc.refresh_from_db()
+        info["document"] = DealDocumentSerializer(doc).data
+        return Response(info)
 
 
 class DealStateView(APIView):

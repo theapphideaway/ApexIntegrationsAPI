@@ -96,6 +96,63 @@ class DocuSignService:
             "configured_account_matches": any(a["account_id"] == self.account_id for a in accounts),
         }
 
+    def _envelopes_api(self):
+        api_client = ApiClient()
+        api_client.host = self.base_path
+        api_client.set_default_header("Authorization", f"Bearer {self._get_access_token()}")
+        return EnvelopesApi(api_client)
+
+    def envelope_status(self, envelope_id: str) -> dict:
+        """Where an envelope stands, per recipient — for 'who hasn't signed?',
+        the check-now button, and the hourly reconciliation sweep."""
+        api = self._envelopes_api()
+        env = api.get_envelope(account_id=self.account_id, envelope_id=envelope_id)
+        recips = api.list_recipients(account_id=self.account_id, envelope_id=envelope_id)
+        signers = []
+        for r in (recips.signers or []):
+            signers.append({
+                "name": r.name, "email": r.email, "status": r.status,          # created/sent/delivered/completed/declined/autoresponded
+                "sent_at": r.sent_date_time, "delivered_at": r.delivered_date_time,
+                "signed_at": r.signed_date_time, "declined_at": r.declined_date_time,
+                "declined_reason": r.declined_reason,
+            })
+        return {
+            "envelope_id": envelope_id, "status": env.status,                  # sent/delivered/completed/declined/voided
+            "sent_at": env.sent_date_time, "completed_at": env.completed_date_time,
+            "voided_at": env.voided_date_time, "voided_reason": env.voided_reason,
+            "expire_at": getattr(env, "expire_date_time", None), "recipients": signers,
+        }
+
+    def envelope_documents(self, envelope_id: str) -> list:
+        """Every signed document in the envelope as (name, pdf_bytes), skipping
+        DocuSign's certificate of completion — the same shape the Connect
+        webhook delivers, so completion can be filed without the webhook."""
+        api = self._envelopes_api()
+        listing = api.list_documents(account_id=self.account_id, envelope_id=envelope_id)
+        out = []
+        for d in (listing.envelope_documents or []):
+            if str(d.document_id).lower() == "certificate" or str(getattr(d, "type", "")).lower() == "summary":
+                continue
+            path = api.get_document(account_id=self.account_id, envelope_id=envelope_id, document_id=d.document_id)
+            with open(path, "rb") as fh:
+                out.append((d.name or f"document {d.document_id}", fh.read()))
+        return out
+
+    def resend(self, envelope_id: str) -> None:
+        """Re-send the signing email to every pending recipient (no changes)."""
+        api = self._envelopes_api()
+        api.update(account_id=self.account_id, envelope_id=envelope_id,
+                   envelope=Envelope(envelope_id=envelope_id), resend_envelope="true")
+
+    def correct_recipient_email(self, envelope_id: str, recipient_id: str, new_email: str, new_name: str = None) -> None:
+        """Fix a signer's email (typo) on an in-flight envelope and resend to them."""
+        api = self._envelopes_api()
+        signer = Signer(recipient_id=recipient_id, email=new_email)
+        if new_name:
+            signer.name = new_name
+        api.update_recipients(account_id=self.account_id, envelope_id=envelope_id,
+                              recipients=Recipients(signers=[signer]), resend_envelope="true")
+
     def download_envelope_document(self, envelope_id: str) -> bytes:
         """Retrieves the fully signed PDF from DocuSign using the envelope ID."""
         access_token = self._get_access_token()

@@ -24,7 +24,7 @@ from django.urls import re_path
 from django.views.static import serve as static_serve
 from AccountsAdmin import dev_views, team_views
 from AccountsAdmin.views import (
-    portal_index, DealArchiveView, DealDocumentsView, DealDocumentDetailView, DealDocumentSendView, DealStateView, DealActivityView, ContractDefaultsView, DealDraftsView, DealDraftDetailView,
+    portal_index, DealArchiveView, DealDocumentsView, DealDocumentDetailView, DealDocumentSendView, DealStateView, DealActivityView, ContractDefaultsView, DealDraftsView, DealDraftDetailView, DealSigningStatusView, DealRemindView, DealCorrectRecipientView, DealDocumentReconcileView,
     docusign_webhook,
     RE21ContractStatusEndpoint,
     AgentDealsListCreateView,
@@ -53,6 +53,10 @@ urlpatterns = [
     path('api/deals/<int:pk>/documents/send/', DealDocumentSendView.as_view(), name='deal-document-send'),
     path('api/deals/<int:pk>/documents/<int:doc_id>/', DealDocumentDetailView.as_view(), name='deal-document-detail'),
     path('api/deals/<int:pk>/state/', DealStateView.as_view(), name='deal-state'),
+    path('api/deals/<int:pk>/reconcile/', DealSigningStatusView.as_view(), name='deal-reconcile'),
+    path('api/deals/<int:pk>/remind/', DealRemindView.as_view(), name='deal-remind'),
+    path('api/deals/<int:pk>/correct-recipient/', DealCorrectRecipientView.as_view(), name='deal-correct-recipient'),
+    path('api/deals/<int:pk>/documents/<int:doc_id>/reconcile/', DealDocumentReconcileView.as_view(), name='deal-document-reconcile'),
     path('api/deals/<int:pk>/activity/', DealActivityView.as_view(), name='deal-activity'),
     path('api/drafts/', DealDraftsView.as_view(), name='drafts'),
     path('api/drafts/<uuid:pk>/', DealDraftDetailView.as_view(), name='draft-detail'),

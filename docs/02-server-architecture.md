@@ -89,6 +89,10 @@ Root (`ApexIntegrationsAPI/urls.py`):
 | GET/DELETE | `/api/deals/<id>/` | detail / delete (row first, then void envelope + S3 cleanup) |
 | POST | `/api/deals/<id>/archive/` `{archived}` | |
 | GET/PATCH | `/api/deals/<id>/state/` | checklist merge-by-key, `form_snapshot`, `acceptance_date` |
+| POST | `/api/deals/<id>/reconcile/` | ask DocuSign: envelope + per-recipient status; **files the executed packet if completed without the webhook**; voided/declined → `cancelled` |
+| POST | `/api/deals/<id>/remind/` | resend the signing email to pending signers (packet unchanged) |
+| POST | `/api/deals/<id>/correct-recipient/` `{recipient_id, new_email, new_name?}` | fix a signer's email on the live envelope and resend (recipient 1 = primary buyer → `buyer_email` updated) |
+| POST | `/api/deals/<id>/documents/<doc_id>/reconcile/` | same for a counter's envelope |
 | GET/POST | `/api/deals/<id>/documents/` | trail / multipart upload (`file`, `doc_type`, `direction`; 25 MB) |
 | POST | `/api/deals/<id>/documents/send/` | generate+send RE-13 (`fields`) **or** accept a received PDF as-is (`source_document_id`); `resulting_terms` updates `form_snapshot` |
 | PATCH/DELETE | `/api/deals/<id>/documents/<doc_id>/` | status (`received|rejected|signed`) / delete |
@@ -132,6 +136,15 @@ Never instantiate `DocuSignService()` bare in a deal context.
 `django-storages` + S3 (`default_storage`). Keys: `drafts/packet_<env>.pdf`, `signed_contracts/signed_re21_<env>.pdf`
 (full packet), `signed_contracts/signed_re21_only_<env>.pdf`, `deal_documents/<deal>/…`. Serializers return
 presigned URLs (5-minute expiry) — clients must not cache them.
+
+## Envelope completion (one code path)
+
+`views.file_completed_envelope(envelope_id, [(name, bytes)])` is the only place an envelope becomes done: merge →
+S3 (`signed_re21_<env>.pdf` + RE-21-only) → `Deal` (`fully_executed`, acceptance, FUB note unless test, Pusher) or
+`DealDocument` (`signed`). Callers: the Connect webhook (with `PDFBytes`, or fetching the documents itself if Connect
+omitted them), `reconcile_envelope` (check-now endpoints, the app's status poll) and the management command
+`python manage.py reconcile_envelopes` (schedule hourly on PythonAnywhere; `--min-age-minutes` skips envelopes the
+webhook may still be delivering).
 
 ## Realtime
 

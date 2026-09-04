@@ -129,6 +129,18 @@ Each feature: what it does, where the code lives (server / web / iOS), the endpo
   `dev_views.DevTestDealsView`; web `NewDeal` toggle, `Pipeline`/`DueSoon`/`Deal` badges + filters, `Dev` purge;
   iOS `PDFPreviewView` toggle, `DealCard`/dashboard badge.
 
-## 16. Dictation → RE-21 (phone only)
+## 16. Signing status, reminders, email fixes (off-ramps for a stuck envelope)
+- **What**: on an in-flight deal, phone + web show a **Signing status** card: each signer with Signed / Opened, not
+  signed / Emailed, not opened / Email bounced / Declined. **Check now** asks DocuSign directly and, if the envelope
+  completed but the webhook never arrived, files the executed packet on the spot. **Send reminder** re-emails every
+  pending signer. **Fix email** corrects a signer's address on the live envelope and resends — no regeneration.
+  Voided/declined envelopes flip the deal to cancelled with a pointer to Edit & Resend.
+- **Safety net**: `manage.py reconcile_envelopes` hourly sweeps every in-flight deal/document envelope.
+- **Code**: `docusign_service.envelope_status/envelope_documents/resend/correct_recipient_email`,
+  `views.reconcile_deal/reconcile_document`, `DealSigningStatusView`, `DealRemindView`, `DealCorrectRecipientView`;
+  iOS `DealCommandCenterView.signingStatusCard` + `DealService.checkSigningStatus/sendReminder/correctRecipient`;
+  web `Deal.tsx` signing card.
+
+## 17. Dictation → RE-21 (phone only)
 - Record → transcription → OpenAI structured extraction → RE-21 → MLS enrichment by extracted address → review.
   The OpenAI key is in the app; move it behind the server before wide release.

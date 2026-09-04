@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { api, type Deal, type DealDocument, type DealState, type DealActivity, type Me } from '../api'
+import { api, type Deal, type DealDocument, type DealState, type DealActivity, type Me, type SigningStatus } from '../api'
 import { PHASES, STATUSES, isDone } from '../checklist'
 import { computeDeadlines, urgency } from '../deadlines'
 import CounterForm from '../components/CounterForm'
@@ -32,6 +32,16 @@ export default function DealPage({ me }: { me: Me }) {
   const [uploadType, setUploadType] = useState<'other' | 're_13'>('other')
   const fileInput = useRef<HTMLInputElement>(null)
   const [showCounter, setShowCounter] = useState<'respond' | 'new' | null>(null)
+  const [signing, setSigning] = useState<SigningStatus | null>(null)
+  const [signingBusy, setSigningBusy] = useState<string | null>(null)
+  const [fixing, setFixing] = useState<{ idx: number; email: string; name: string } | null>(null)
+
+  async function checkSigning(quiet = false) {
+    if (!deal || !deal.docusign_envelope_id) return
+    setSigningBusy('check'); if (!quiet) setError(null)
+    try { const r = await api.reconcile(deal.id); setSigning(r); if (r.deal) setDeal(r.deal); if (r.action === 'filed') await loadDocs() }
+    catch (e) { if (!quiet) setError(String(e)) } finally { setSigningBusy(null) }
+  }
 
   const loadDocs = useCallback(() => api.documents(id).then(setDocs), [id])
 
@@ -40,6 +50,8 @@ export default function DealPage({ me }: { me: Me }) {
       .then(([d, s, docs]) => { setDeal(d); setState(s); setDocs(docs) })
       .catch((e) => setError(String(e)))
     api.activity(id).then(setActivity).catch(() => setActivity([]))
+    // Signing status for in-flight envelopes (also files it if DocuSign says completed).
+    api.deal(id).then((d) => { if (d.docusign_envelope_id && ['out_for_signature', 'signed_by_buyers'].includes(d.status)) api.reconcile(id).then((r) => { setSigning(r); if (r.deal) setDeal(r.deal) }).catch(() => {}) }).catch(() => {})
     const t = setInterval(() => api.activity(id).then(setActivity).catch(() => {}), 60_000)
     return () => clearInterval(t)
   }, [id])
@@ -102,6 +114,38 @@ export default function DealPage({ me }: { me: Me }) {
             <button className="primary inv" onClick={() => setShowCounter('respond')}>Respond</button>
           </div>
         </div>
+      )}
+
+      {['out_for_signature', 'signed_by_buyers'].includes(deal.status) && deal.docusign_envelope_id && (
+        <section className="card" style={{ marginBottom: 20 }}>
+          <div className="cardhead"><h2>Signing status</h2>
+            <div className="row" style={{ alignItems: 'center' }}>
+              <button className="secondary" disabled={signingBusy !== null} onClick={() => checkSigning()}>{signingBusy === 'check' ? 'Checking…' : 'Check now'}</button>
+              <button className="secondary" disabled={signingBusy !== null} onClick={async () => { if (!confirm('Resend the signing email to everyone who hasn\'t signed?')) return; setSigningBusy('remind'); try { await api.remind(deal.id); setError(null); alert('Reminder sent.') } catch (e) { setError(String(e)) } finally { setSigningBusy(null) } }}>{signingBusy === 'remind' ? 'Sending…' : 'Send reminder'}</button>
+            </div>
+          </div>
+          {!signing && <p className="muted small">Checking with DocuSign…</p>}
+          {signing && signing.recipients.length === 0 && <p className="muted small">Envelope {signing.status}.</p>}
+          {signing && signing.recipients.map((r, i) => (
+            <div className="task" key={i}>
+              <div><b>{r.name}</b> <span className="muted small">{r.email}</span>
+                {fixing?.idx === i && (
+                  <form className="row" style={{ marginTop: 6 }} onSubmit={async (e) => { e.preventDefault(); setSigningBusy('fix'); try { await api.correctRecipient(deal.id, String(i + 1), fixing.email, fixing.name || undefined); setFixing(null); await checkSigning(true) } catch (err) { setError(String(err)) } finally { setSigningBusy(null) } }}>
+                    <input type="email" required value={fixing.email} onChange={(e) => setFixing({ ...fixing, email: e.target.value })} placeholder="correct email" />
+                    <button className="primary" disabled={signingBusy !== null}>Update & resend</button>
+                    <button type="button" className="link" onClick={() => setFixing(null)}>Cancel</button>
+                  </form>
+                )}
+              </div>
+              <div className="row" style={{ alignItems: 'center' }}>
+                <span className={`status ${r.status === 'completed' ? 'ok' : r.status === 'declined' || r.status === 'autoresponded' ? 'bad' : r.status === 'delivered' ? 'warn' : ''}`}>{r.status === 'completed' ? `Signed ${r.signed_at ? new Date(r.signed_at).toLocaleDateString() : ''}` : r.status === 'delivered' ? 'Opened, not signed' : r.status === 'sent' ? 'Emailed, not opened' : r.status === 'autoresponded' ? 'Email bounced' : r.status}</span>
+                {r.status !== 'completed' && fixing?.idx !== i && <button className="link small" onClick={() => setFixing({ idx: i, email: r.email, name: r.name })}>Fix email</button>}
+              </div>
+            </div>
+          ))}
+          {signing?.action === 'filed' && <p className="notice">DocuSign reported this envelope complete — the executed packet has been filed.</p>}
+          {signing && ['voided', 'declined'].includes(signing.status) && <p className="error">Envelope {signing.status}{signing.voided_reason ? ` — ${signing.voided_reason}` : ''}. Use Edit &amp; Resend from the phone to send a fresh packet.</p>}
+        </section>
       )}
 
       {(() => { const dl = computeDeadlines(deal); return dl.length > 0 ? (

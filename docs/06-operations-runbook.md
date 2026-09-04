@@ -54,6 +54,12 @@ Secrets never go in the database or the repo. Runtime *switches* live in the `Ap
 8. Go-live promotion of the key in DocuSign Apps & Keys (self-service now; no 20-call rule).
 Pricing note: envelopes are per company (one API user sends everything); a deal is ~2–4 envelopes.
 
+## Scheduled tasks (PythonAnywhere → Tasks)
+
+| Command | Cadence | Purpose |
+|---|---|---|
+| `cd ~/ApexIntegrationsAPI && python manage.py reconcile_envelopes` | hourly | files envelopes that completed without the webhook; marks voided/declined |
+
 ## Follow Up Boss
 
 - Outbound: agent connects via OAuth from the app (Profile → Integrations). Tokens on the user; refresh on 401.
@@ -83,7 +89,8 @@ production DocuSign sends default to *real* deals.
 |---|---|---|
 | Login 500, "column … does not exist" | pulled a migration, didn't migrate | `manage.py migrate`, reload |
 | `NameError` at startup in urls.py | view not imported | run `scripts/localcheck.py` before pushing |
-| Webhook 400 "Missing PDFBytes" | Connect config without *Include Document PDFs* | fix Connect config |
+| Webhook 400 "Missing PDFBytes" | Connect config without *Include Document PDFs* | the webhook now fetches the documents itself; still fix Connect config |
+| Deal stuck "Awaiting signature" though buyers signed | webhook never delivered | Check now on the deal, or wait for the hourly `reconcile_envelopes` |
 | Phone checklist ≠ web checklist | old build / failed push | app reconciles on next open; server wins per key |
 | No deadlines on a deal | executed before `form_snapshot`/`acceptance_date` existed | resend, or accept the gap |
 | OTP emails not arriving at a business domain | Gmail SMTP + DMARC | SES/Postmark with domain auth (planned) |
