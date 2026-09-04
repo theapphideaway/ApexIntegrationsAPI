@@ -101,7 +101,7 @@ Root (`ApexIntegrationsAPI/urls.py`):
 | GET | `/api/mls/search/?address=`, `/api/mls/listing/<n>/` | RESO passthrough `{value:[...]}` (address OR city; top 50) |
 | GET/PATCH | `/api/defaults/` | agent's effective defaults `{team, mine, effective, locked}` / save `mine` |
 | GET/PATCH | `/api/team/`, POST `/api/team/members/`, PATCH `/api/team/members/<uuid>/`, GET/PATCH `/api/team/defaults/` | team admin |
-| GET/PATCH | `/api/dev/settings/`, POST `/api/dev/docusign/test/`, GET/POST `/api/dev/teams/`, PATCH `/api/dev/teams/<uuid>/`, GET/POST `/api/dev/users/`, PATCH/DELETE `/api/dev/users/<uuid>/` | superuser |
+| GET/PATCH | `/api/dev/settings/`, POST `/api/dev/docusign/test/`, GET/POST `/api/dev/docusign/connect/`, GET/POST `/api/dev/docusign/account-settings/`, GET/POST `/api/dev/teams/`, PATCH `/api/dev/teams/<uuid>/`, GET/POST `/api/dev/users/`, PATCH/DELETE `/api/dev/users/<uuid>/` | superuser |
 | POST | `/api/token/refresh/` | |
 | GET | `/portal/…` | the web app (`web/dist/index.html`; `/portal/assets/` static) |
 
