@@ -186,6 +186,15 @@ class DevTestDealsView(APIView):
             {"id": d.id, "property_address": d.property_address, "buyer_names": d.buyer_names, "status": d.status,
              "agent": f"{d.agent.first_name} {d.agent.last_name}".strip(), "docusign_env": d.docusign_env} for d in deals[:200]]})
 
+    def patch(self, request):
+        """PATCH /api/dev/test-deals/ {deal_id, is_test} — mark or unmark one deal."""
+        deal = Deal.objects.filter(pk=request.data.get("deal_id")).first()
+        if deal is None:
+            return Response({"error": "Not found."}, status=404)
+        deal.is_test = bool(request.data.get("is_test"))
+        deal.save(update_fields=["is_test"])
+        return Response({"id": deal.id, "is_test": deal.is_test})
+
     def post(self, request):
         from django.core.files.storage import default_storage
         deleted, voided, errors = 0, 0, []

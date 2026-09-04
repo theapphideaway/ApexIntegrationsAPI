@@ -592,10 +592,9 @@ class SendOnboardingBundleEndpoint(APIView):
             # envelope we don't know about — so void it and tell the agent
             # plainly that nothing went out. (A concurrent duplicate send with
             # the same key resolves to the row that won.)
-            # Test mode: explicit flag wins; otherwise anything sent on the DocuSign
-            # demo account is a rehearsal (demo documents are watermarked anyway).
-            raw_test = payload.get("is_test")
-            is_test = bool(raw_test) if raw_test is not None else (ds_service.env != "production")
+            # Test deals exist only for the platform owner. Agents' deals are real
+            # deals — on demo or production — and never carry a test flag.
+            is_test = bool(payload.get("is_test")) if request.user.is_superuser else False
             try:
                 deal = Deal.objects.create(
                     docusign_env=ds_service.env,
@@ -1202,7 +1201,7 @@ class DealSigningStatusView(APIView):
         except Exception as e:
             return Response({"error": f"DocuSign didn't answer: {e}"}, status=502)
         deal.refresh_from_db()
-        info["deal"] = DealSerializer(deal).data
+        info["deal"] = DealSerializer(deal, context={"request": request}).data
         return Response(info)
 
 

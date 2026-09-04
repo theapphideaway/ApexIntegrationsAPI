@@ -71,10 +71,11 @@ Pricing note: envelopes are per company (one API user sends everything); a deal 
 
 ## Testing safely
 
-Use **test deals** (default for anything sent on DocuSign demo): they never touch Follow Up Boss, redirect
-title/lender emails to the sender, and are excluded from stats. Buyer emails can be your own with plus-addressing.
-Purge them from Developer → Test deals. A real transaction on demo is impossible anyway (watermarked documents);
-production DocuSign sends default to *real* deals.
+Only the owner account can create test deals (New Deal preview → "Test deal", or mark an existing one via
+`PATCH /api/dev/test-deals/`). Test deals never touch Follow Up Boss, redirect title/lender emails to the sender,
+and are excluded from the owner's stats. Agents never see any of this: their deals are real. To have an agent
+rehearse, do it on the owner account or mark that specific deal as test afterwards and purge it from Developer →
+Test deals.
 
 ## Backups and data
 

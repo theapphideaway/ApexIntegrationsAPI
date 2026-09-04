@@ -48,7 +48,7 @@ export default function DueSoon({ me }: { me: Me }) {
               {agents.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
             </select>
           )}
-          <label className="toggle"><input type="checkbox" checked={includeTests} onChange={(e) => setIncludeTests(e.target.checked)} /> Include test deals</label>
+          {me.is_superuser && <label className="toggle"><input type="checkbox" checked={includeTests} onChange={(e) => setIncludeTests(e.target.checked)} /> Include test deals</label>}
           <select value={horizon} onChange={(e) => setHorizon(Number(e.target.value))}>
             <option value={7}>Next 7 days</option><option value={14}>Next 14 days</option><option value={30}>Next 30 days</option><option value={365}>Everything</option>
           </select>

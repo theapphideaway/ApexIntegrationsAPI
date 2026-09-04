@@ -34,6 +34,7 @@ class DealSerializer(serializers.ModelSerializer):
     draft_pdf_url = serializers.SerializerMethodField()
     signed_pdf_url = serializers.SerializerMethodField()
     signed_re21_url = serializers.SerializerMethodField()
+    is_test = serializers.SerializerMethodField()
 
     agent_id = serializers.SerializerMethodField()
     agent_name = serializers.SerializerMethodField()
@@ -63,6 +64,12 @@ class DealSerializer(serializers.ModelSerializer):
             'form_snapshot',
             'updated_at'
         ]
+
+    def get_is_test(self, obj):
+        """Only the platform owner ever sees the test flag; to everyone else a deal is a deal."""
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        return bool(obj.is_test) if user is not None and getattr(user, "is_superuser", False) else False
 
     def get_agent_team(self, obj):
         a = getattr(obj, 'agent', None)

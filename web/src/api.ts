@@ -163,6 +163,7 @@ export const api = {
     patchTeam: (id: string, body: Partial<Team>) => request<Team>(`/api/dev/teams/${id}/`, { method: 'PATCH', body: JSON.stringify(body) }),
     users: () => request<PortalUser[]>('/api/dev/users/'),
     testDeals: () => request<{ count: number; deals: { id: number; property_address: string; buyer_names: string; status: string; agent: string }[] }>('/api/dev/test-deals/'),
+    markTestDeal: (dealId: number, isTest: boolean) => request<{ id: number; is_test: boolean }>('/api/dev/test-deals/', { method: 'PATCH', body: JSON.stringify({ deal_id: dealId, is_test: isTest }) }),
     purgeTestDeals: () => request<{ deleted: number; voided_envelopes: number; errors: string[] }>('/api/dev/test-deals/purge/', { method: 'POST', body: '{}' }),
     createUser: (body: { email: string; first_name: string; last_name: string; phone_number?: string; role: string; organization: string }) => request<PortalUser>('/api/dev/users/', { method: 'POST', body: JSON.stringify(body) }),
     patchUser: (id: string, body: Record<string, unknown>) => request<PortalUser>(`/api/dev/users/${id}/`, { method: 'PATCH', body: JSON.stringify(body) }),

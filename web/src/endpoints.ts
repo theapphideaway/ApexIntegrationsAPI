@@ -88,6 +88,7 @@ export function catalog(pf: Prefill): Endpoint[] {
     { id: 'dev-team-create', group: 'Developer', method: 'POST', path: '/api/dev/teams/', title: 'Create team', body: { name: 'Test Team', plan_type: 'basic' }, danger: 'Creates a team.' },
     { id: 'dev-team-patch', group: 'Developer', method: 'PATCH', path: '/api/dev/teams/:team_id/', title: 'Update team', params: { team_id: pf.teamId }, body: { plan_type: 'pro' } },
     { id: 'dev-test-deals', group: 'Developer', method: 'GET', path: '/api/dev/test-deals/', title: 'Test deals (platform-wide)' },
+    { id: 'dev-test-deals-mark', group: 'Developer', method: 'PATCH', path: '/api/dev/test-deals/', title: 'Mark / unmark a deal as test', body: { deal_id: Number(pf.dealId) || 0, is_test: true } },
     { id: 'dev-test-deals-purge', group: 'Developer', method: 'POST', path: '/api/dev/test-deals/purge/', title: 'Purge ALL test deals', body: {}, danger: 'Deletes every test deal, voids their envelopes, removes their files.' },
     { id: 'dev-users', group: 'Developer', method: 'GET', path: '/api/dev/users/', title: 'All users' },
     { id: 'dev-user-create', group: 'Developer', method: 'POST', path: '/api/dev/users/', title: 'Create user', body: { email: 'new.agent@example.com', first_name: 'New', last_name: 'Agent', role: 'agent', organization: pf.teamId }, danger: 'Creates a user.' },
