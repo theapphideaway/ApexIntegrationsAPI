@@ -13,8 +13,6 @@ export default function NewDeal({ me }: { me: Me }) {
   // Server-side draft: created when a property is chosen (or resumed from ?draft=), saved on every edit.
   const [draftId, setDraftId] = useState<string | null>(searchParams.get('draft'))
   const [draftSaved, setDraftSaved] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
-  // Test deal (owner only): no CRM sync, emails redirected, badged, purgeable. Agents never see this.
-  const [isTest, setIsTest] = useState(false)
   const saveTimer = useRef<number | null>(null)
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<Listing[] | null>(null)
@@ -115,10 +113,10 @@ export default function NewDeal({ me }: { me: Me }) {
 
   async function send() {
     const names = [form.buyerName, form.buyerNameTwo].filter(Boolean).join(' & ')
-    if (!confirm(`Send the packet to ${names} (${form.buyerEmail}${form.buyerEmailTwo ? ', ' + form.buyerEmailTwo : ''}) for signature via DocuSign ${me.docusign_env === 'production' ? 'PRODUCTION' : 'TEST'}${isTest ? ' as a TEST deal (no CRM sync, emails to you)' : ''}?`)) return
+    if (!confirm(`Send the packet to ${names} (${form.buyerEmail}${form.buyerEmailTwo ? ', ' + form.buyerEmailTwo : ''}) for signature via DocuSign${me.docusign_env === 'production' ? ' (production)' : ''}?`)) return
     setBusy('send'); setError(null)
     try {
-      const r = await api.sendPacket(buildPacket(form, re14, agency, forms, { email: listing?.listAgentEmail, name: listing?.listAgentFullName }, draftId || undefined, me.is_superuser ? isTest : undefined))
+      const r = await api.sendPacket(buildPacket(form, re14, agency, forms, { email: listing?.listAgentEmail, name: listing?.listAgentFullName }, draftId || undefined))
       navigate(`/deals/${r.deal_id}`)
     } catch (err) { setError(String(err)) } finally { setBusy(null) }
   }
@@ -172,7 +170,6 @@ export default function NewDeal({ me }: { me: Me }) {
         <div><h1>Packet Preview</h1><p className="muted">{listing?.unparsedAddress} · {selectedCount} document{selectedCount === 1 ? '' : 's'}</p></div>
         <div className="filters">
           <button className="link" onClick={() => setStep('review')}>← Edit values</button>
-          {me.is_superuser && <label className="toggle" title="Owner only: test deals never sync to Follow Up Boss, redirect title/lender emails to you, are badged, and can be purged."><input type="checkbox" checked={isTest} onChange={(e) => setIsTest(e.target.checked)} /> Test deal</label>}
           <button className="primary" disabled={busy !== null} onClick={send}>{busy === 'send' ? 'Sending…' : 'Send for Signatures'}</button>
         </div>
       </div>

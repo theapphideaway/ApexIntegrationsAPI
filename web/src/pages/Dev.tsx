@@ -110,11 +110,6 @@ function DevOverview({ me }: { me: Me }) {
       </div>
 
       <section className="card" style={{ marginTop: 20 }}>
-        <div className="cardhead"><h2>Test deals</h2><button className="link danger" disabled={busy !== null} onClick={async () => { const t = await api.dev.testDeals(); if (!t.count) { setNotice('No test deals to purge.'); return } if (!confirm(`Purge ${t.count} test deal(s)? Their envelopes are voided and files removed. Real deals are untouched.`)) return; setBusy('purge'); try { const r = await api.dev.purgeTestDeals(); setNotice(`Purged ${r.deleted} test deal(s), voided ${r.voided_envelopes} envelope(s)${r.errors.length ? `, ${r.errors.length} void error(s)` : ''}.`) } catch (e) { setError(String(e)) } finally { setBusy(null) } }}>Purge all test deals</button></div>
-        <p className="muted small">Only you can create or see test deals: tick “Test deal” on the New Deal preview step, or mark an existing one from the API Explorer (<code>PATCH /api/dev/test-deals/</code>). Agents never see a toggle, a badge, or any mention of test mode — their deals are real deals. Test deals never sync to Follow Up Boss, redirect title/lender emails to the sender, and are excluded from your stats and Due Soon.</p>
-      </section>
-
-      <section className="card" style={{ marginTop: 20 }}>
         <div className="cardhead"><h2>Users</h2><span className="muted small">{users.length} total</span></div>
         <table className="table compact">
           <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Role</th><th>Team</th><th>Deals</th><th>DocuSign</th><th>FUB</th><th>Active</th><th></th></tr></thead>

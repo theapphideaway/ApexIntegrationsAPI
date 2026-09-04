@@ -14,7 +14,7 @@
 | **Forwarding buyer counters to the listing agent by email** | The MLS has no seller contact; listing agents collect their seller's signature on their own system. |
 | **Team defaults lock the *default*, not the per-deal value** | A negotiated per-deal term must never be silently overwritten at send. |
 | **Local notifications, not APNs (for now)** | Deadlines are computed on-device from the contract; no push infrastructure needed. |
-| **No test-looking features for agents** | Agents are on real deals from day one; test deals exist only for the owner (server-enforced flag visibility), no toggles anywhere in the app. |
+| **Test mode paused, owner-only, no UI** | Agents are on real deals from day one; test deals exist only for the owner (server-enforced flag visibility), no toggles anywhere in the app. |
 | **New Deal on the web is agent-only** | Explicit product decision; superuser exempt for testing. |
 | **MLS is always live** | The mock toggle was removed; the credential lives only on the server. |
 | **Superuser sees everything** | Owner account is auto-promoted by migration `0012`; `deals_for` returns all deals. |

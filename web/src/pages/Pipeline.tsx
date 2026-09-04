@@ -16,7 +16,6 @@ export default function Pipeline({ me }: { me: Me }) {
   const [drafts, setDrafts] = useState<Draft[]>([])
   const [showArchived, setShowArchived] = useState(false)
   const [groupByAgent, setGroupByAgent] = useState(true)
-  const [showTests, setShowTests] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const teamView = me.role !== 'agent'
 
@@ -25,18 +24,17 @@ export default function Pipeline({ me }: { me: Me }) {
 
   const groups = useMemo(() => {
     if (!deals) return []
-    const visible = deals.filter((d) => (showArchived ? d.is_archived : !d.is_archived) && (showTests || !d.is_test))
+    const visible = deals.filter((d) => (showArchived ? d.is_archived : !d.is_archived))
     if (!teamView || !groupByAgent) return [{ agent: null as string | null, deals: visible }]
     const byAgent = new Map<string, Deal[]>()
     visible.forEach((d) => { const k = me.is_superuser && d.agent_team ? `${d.agent_name} · ${d.agent_team}` : d.agent_name; byAgent.set(k, [...(byAgent.get(k) || []), d]) })
     return Array.from(byAgent.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([agent, deals]) => ({ agent, deals }))
-  }, [deals, showArchived, groupByAgent, teamView, me.is_superuser, showTests])
+  }, [deals, showArchived, groupByAgent, teamView, me.is_superuser])
 
   if (error) return <p className="error">{error}</p>
   if (!deals) return <div className="deals">{[0, 1, 2].map((i) => <div className="dealrow" key={i}><div className="skeleton" style={{ width: '60%' }} /><div className="skeleton" style={{ width: '40%' }} /><div className="skeleton" /><div className="skeleton" /><div className="skeleton" /><div /></div>)}</div>
 
-  const active = deals.filter((d) => !d.is_archived && !d.is_test)   // stats are about real business
-  const testCount = me.is_superuser ? deals.filter((d) => !d.is_archived && d.is_test).length : 0
+  const active = deals.filter((d) => !d.is_archived)
   const awaiting = active.filter((d) => d.status === 'out_for_signature').length
   const executed = active.filter((d) => d.status === 'fully_executed').length
   const soon = active.flatMap(computeDeadlines).filter((x) => urgency(x.date) === 'soon').length
@@ -51,7 +49,6 @@ export default function Pipeline({ me }: { me: Me }) {
         </div>
         <div className="filters">
           {teamView && <label className="toggle"><input type="checkbox" checked={groupByAgent} onChange={(e) => setGroupByAgent(e.target.checked)} /> Group by agent</label>}
-          {testCount > 0 && <label className="toggle"><input type="checkbox" checked={showTests} onChange={(e) => setShowTests(e.target.checked)} /> Test deals ({testCount})</label>}
           <label className="toggle"><input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} /> Archived</label>
           {(me.role === 'agent' || me.is_superuser) && <Link to="/new" className="btnlink">+ Start from property</Link>}
         </div>
@@ -97,8 +94,8 @@ export default function Pipeline({ me }: { me: Me }) {
               const nd = nextDeadline(d)
               const u = nd ? urgency(nd.date) : 'later'
               return (
-                <div className={`dealrow ${d.is_test ? 'test' : ''}`} key={d.id}>
-                  <div className="col"><Link to={`/deals/${d.id}`} className="addr">{me.is_superuser && d.is_test && <span className="testbadge">TEST</span>}{d.property_address}</Link><div className="meta">{d.buyer_names}{teamView && !groupByAgent ? ` · ${d.agent_name}` : ''}</div></div>
+                <div className="dealrow" key={d.id}>
+                  <div className="col"><Link to={`/deals/${d.id}`} className="addr">{d.property_address}</Link><div className="meta">{d.buyer_names}{teamView && !groupByAgent ? ` · ${d.agent_name}` : ''}</div></div>
                   <div className="col"><div className="lbl">Status</div><span className={`status ${STATUS_CLASS[d.status] || ''}`}>{d.status_display}</span></div>
                   <div className="col"><div className="lbl">Packet</div>{d.signed_pdf_url ? <a className="docbtn" style={{ marginLeft: 0 }} href={d.signed_pdf_url} target="_blank" rel="noreferrer">Executed</a> : d.draft_pdf_url ? <a className="docbtn" style={{ marginLeft: 0 }} href={d.draft_pdf_url} target="_blank" rel="noreferrer">Offer</a> : <span className="muted">—</span>}</div>
                   <div className="col"><div className="lbl">Next deadline</div>{nd ? <><span className={`status ${u === 'soon' ? 'warn' : ''}`}>{nd.date.toLocaleDateString()}</span><div className="meta">{nd.title}</div></> : <span className="muted">—</span>}</div>

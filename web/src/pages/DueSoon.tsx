@@ -9,18 +9,17 @@ export default function DueSoon({ me }: { me: Me }) {
   const [deals, setDeals] = useState<Deal[] | null>(null)
   const [agent, setAgent] = useState<string>('all')
   const [horizon, setHorizon] = useState<number>(14)
-  const [includeTests, setIncludeTests] = useState(false)
   useEffect(() => { api.deals().then(setDeals) }, [])
 
   const rows = useMemo<Row[]>(() => {
     if (!deals) return []
     const limit = Date.now() + horizon * 86400_000
     return deals
-      .filter((d) => !d.is_archived && d.status !== 'cancelled' && (includeTests || !d.is_test) && (agent === 'all' || d.agent_id === agent))
+      .filter((d) => !d.is_archived && d.status !== 'cancelled' && (agent === 'all' || d.agent_id === agent))
       .flatMap((d) => computeDeadlines(d).map((x) => ({ ...x, deal: d, u: urgency(x.date) })))
       .filter((r) => r.date.getTime() <= limit)
       .sort((a, b) => a.date.getTime() - b.date.getTime())
-  }, [deals, agent, horizon, includeTests])
+  }, [deals, agent, horizon])
 
   if (!deals) return <p className="muted">Loading…</p>
   const agents = Array.from(new Map(deals.map((d) => [d.agent_id, d.agent_name])).entries())
@@ -48,7 +47,6 @@ export default function DueSoon({ me }: { me: Me }) {
               {agents.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
             </select>
           )}
-          {me.is_superuser && <label className="toggle"><input type="checkbox" checked={includeTests} onChange={(e) => setIncludeTests(e.target.checked)} /> Include test deals</label>}
           <select value={horizon} onChange={(e) => setHorizon(Number(e.target.value))}>
             <option value={7}>Next 7 days</option><option value={14}>Next 14 days</option><option value={30}>Next 30 days</option><option value={365}>Everything</option>
           </select>

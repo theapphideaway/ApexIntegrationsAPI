@@ -118,17 +118,12 @@ Each feature: what it does, where the code lives (server / web / iOS), the endpo
 - **Code**: `SendOnboardingBundleEndpoint`, `DealDocumentSendView`; iOS `FormFlowCoordinator.sendKey`,
   `CounterOfferSheet.sendKey`; web `buildPacket` (`send_key = draftId`), `CounterForm`.
 
-## 15. Test deals (owner-only; invisible to agents)
-- **Rule** (Ian, 2026-09-04): agents are rolled out on **real deals** — there must be no toggle, badge, or any hint
-  of a "test mode" in the app or portal for anyone but the platform owner. Every send by an agent is a real deal,
-  on demo or production DocuSign alike.
-- **What exists**: `Deal.is_test`, settable only by the superuser (the "Test deal" checkbox on the web New Deal
-  preview step, or `PATCH /api/dev/test-deals/ {deal_id, is_test}`), and visible only to the superuser (the
-  serializer returns `false` to everyone else). Test deals never sync to Follow Up Boss, title/lender distribution
-  goes to the sender with a `[TEST]` subject, they're badged and filterable only in the owner's views, and Developer →
-  Test deals → Purge removes them (voids envelopes, deletes files).
-- **Code**: `SendOnboardingBundleEndpoint` (`is_test` honored only for superuser), `DealSerializer.get_is_test`,
-  `dev_views.DevTestDealsView` (GET/PATCH/POST purge), web gates on `me.is_superuser`; the iOS app has no test UI.
+## 15. Test deals — PAUSED (logic kept, no UI anywhere)
+- **Status** (Ian, 2026-09-04): development paused; agents are on real deals and must never see anything that looks
+  like a test feature. The server keeps `Deal.is_test` (default false; settable only by the superuser via
+  `PATCH /api/dev/test-deals/ {deal_id, is_test}` or `is_test` on a superuser send), the FUB/email suppression for
+  flagged deals, and `POST /api/dev/test-deals/purge/`. **There is no toggle, badge, or filter in the app or portal.**
+  Reinstating a UI later is a portal-only change gated on `is_superuser`.
 
 ## 16. Signing status, reminders, email fixes (off-ramps for a stuck envelope)
 - **What**: on an in-flight deal, phone + web show a **Signing status** card: each signer with Signed / Opened, not
