@@ -100,6 +100,15 @@ Each feature: what it does, where the code lives (server / web / iOS), the endpo
 - Archive (context menu / row action) hides from the pipeline; Archive tab restores. Delete removes the row first,
   then voids the envelope and cleans S3; phone hides it immediately and ignores it in refreshes until confirmed.
 
-## 13. Dictation → RE-21 (phone only)
+## 13. Drafts (off-ramp: never lose a half-built packet)
+- **What**: every packet flow (MLS, dictation, manual, revision) saves a server-side draft as the agent types
+  (debounced ~1.5 s); a **Drafts** strip on the pipeline (phone + web) resumes it on any device; sending deletes it;
+  discard/delete available. TCs/admins see their team's drafts and can finish one.
+- **Server**: `DealDraft`, `DealDraftsView` (upsert by client-generated UUID → idempotent), `drafts_for`.
+- **iOS**: `DraftService`, `FormFlowCoordinator.beginDraft/scheduleDraftSave/resumeDraft`, `DealsPipelineView.draftsSection`.
+- **Web**: `NewDeal.tsx` autosave + `?draft=<id>` resume, `Pipeline.tsx` Drafts strip.
+- **Payload contract** (shared): `{form: RE-21 JSON with ISO dates, re14, agency, forms: ["re_21","re_14","agency_disclosure"], listing, source}`.
+
+## 14. Dictation → RE-21 (phone only)
 - Record → transcription → OpenAI structured extraction → RE-21 → MLS enrichment by extracted address → review.
   The OpenAI key is in the app; move it behind the server before wide release.

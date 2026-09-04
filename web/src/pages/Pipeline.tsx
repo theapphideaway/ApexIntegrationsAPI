@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { api, type Deal, type Me } from '../api'
+import { api, type Deal, type Me, type Draft } from '../api'
 import { computeDeadlines, urgency } from '../deadlines'
 import { initials } from '../App'
 
@@ -13,12 +13,13 @@ function nextDeadline(d: Deal) {
 
 export default function Pipeline({ me }: { me: Me }) {
   const [deals, setDeals] = useState<Deal[] | null>(null)
+  const [drafts, setDrafts] = useState<Draft[]>([])
   const [showArchived, setShowArchived] = useState(false)
   const [groupByAgent, setGroupByAgent] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const teamView = me.role !== 'agent'
 
-  const load = () => api.deals().then(setDeals).catch((e) => setError(String(e)))
+  const load = () => { api.drafts().then(setDrafts).catch(() => {}); return api.deals().then(setDeals).catch((e) => setError(String(e))) }
   useEffect(() => { load() }, [])
 
   const groups = useMemo(() => {
@@ -63,7 +64,25 @@ export default function Pipeline({ me }: { me: Me }) {
         </div>
       )}
 
-      {groups.every((g) => g.deals.length === 0) && (
+      {drafts.length > 0 && !showArchived && (
+        <div className="group">
+          <h2 className="grouphead">Drafts <span className="muted">· {drafts.length} unfinished packet{drafts.length === 1 ? '' : 's'}</span></h2>
+          <div className="deals">
+            {drafts.map((d) => (
+              <div className="dealrow draft" key={d.id}>
+                <div className="col"><Link to={`/new?draft=${d.id}`} className="addr">{d.title || 'Untitled packet'}</Link><div className="meta">{d.source === 'dictation' ? 'From dictation' : d.source === 'manual' ? 'Manual entry' : d.source === 'revision' ? 'Revision' : 'From MLS'}{teamView ? ` · ${d.agent_name}` : ''} · last edited on {d.device === 'ios' ? 'phone' : 'web'}</div></div>
+                <div className="col"><div className="lbl">Status</div><span className="status warn">Draft</span></div>
+                <div className="col" />
+                <div className="col"><div className="lbl">Buyer</div><span className="muted">{String(d.payload?.form?.buyerName || '—')}</span></div>
+                <div className="col"><div className="lbl">Updated</div><span className="muted">{new Date(d.updated_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</span></div>
+                <div className="col right"><Link to={`/new?draft=${d.id}`} className="docbtn" style={{ marginLeft: 0 }}>Resume</Link> <button className="link danger" onClick={async () => { if (!confirm('Delete this draft?')) return; await api.deleteDraft(d.id); load() }}>Delete</button></div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {groups.every((g) => g.deals.length === 0) && drafts.length === 0 && (
         <div className="empty"><b>{showArchived ? 'No archived deals' : 'No active deals yet'}</b>{!showArchived && (me.role === 'agent' || me.is_superuser) ? <span>Start one from an MLS listing and the packet is prefilled for you.</span> : <span>Deals appear here as agents send packets.</span>}</div>
       )}
 

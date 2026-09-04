@@ -1,14 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { api, type Me } from '../api'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { api, type Me, type DraftPayload } from '../api'
 import { toListing, money, type Listing } from '../mls'
-import { SECTIONS, RE14_FIELDS, AGENCY_FIELDS, defaultRE21, defaultRE14, defaultAgency, prefillFromListing, applyLoanTypePresets, applyDefaults, missingRequired, buildPacket, type Field, type RE21, type Forms } from '../re21'
+import { SECTIONS, RE14_FIELDS, AGENCY_FIELDS, defaultRE21, defaultRE14, defaultAgency, prefillFromListing, applyLoanTypePresets, applyDefaults, missingRequired, buildPacket, draftForm, type Field, type RE21, type Forms } from '../re21'
 
 type Step = 'search' | 'review' | 'preview'
 
 export default function NewDeal({ me }: { me: Me }) {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const [step, setStep] = useState<Step>('search')
+  // Server-side draft: created when a property is chosen (or resumed from ?draft=), saved on every edit.
+  const [draftId, setDraftId] = useState<string | null>(searchParams.get('draft'))
+  const [draftSaved, setDraftSaved] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const saveTimer = useRef<number | null>(null)
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<Listing[] | null>(null)
   const [searching, setSearching] = useState(false)
@@ -28,6 +33,37 @@ export default function NewDeal({ me }: { me: Me }) {
   useEffect(() => { api.defaults().then((d) => setSavedDefaults({ effective: d.effective, locked: d.locked })).catch(() => {}) }, [])
 
   useEffect(() => () => { if (pdfUrl) URL.revokeObjectURL(pdfUrl) }, [pdfUrl])
+
+  // Resume a draft (from the pipeline's Drafts strip, or a phone-started packet).
+  useEffect(() => {
+    const id = searchParams.get('draft'); if (!id) return
+    api.draft(id).then((d) => {
+      const pl = d.payload
+      setForm({ ...defaultRE21(), ...(pl.form || {}) })
+      setRe14({ ...defaultRE14(), ...(pl.re14 || {}) })
+      setAgency({ ...defaultAgency(), ...(pl.agency || {}) })
+      const f = pl.forms || ['re_21', 're_14', 'agency_disclosure']
+      setForms({ re21: f.includes('re_21'), re14: f.includes('re_14'), agency: f.includes('agency_disclosure') })
+      if (pl.listing) setListing({ mlsNumber: pl.listing.mlsNumber || '', unparsedAddress: pl.listing.address || String(pl.form?.propertyAddress || ''), city: String(pl.form?.propertyCity || ''), stateOrProvince: String(pl.form?.propertyState || ''), postalCode: String(pl.form?.propertyZip || ''), listAgentEmail: pl.listing.listAgentEmail, listAgentFullName: pl.listing.listAgentName })
+      else setListing({ mlsNumber: '', unparsedAddress: String(pl.form?.propertyAddress || ''), city: '', stateOrProvince: '', postalCode: '' })
+      setDraftId(d.id); setStep('review')
+    }).catch(() => setError('That draft could not be loaded — it may have been sent or deleted.'))
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Autosave (debounced) while reviewing.
+  useEffect(() => {
+    if (!draftId || step === 'search') return
+    if (saveTimer.current) window.clearTimeout(saveTimer.current)
+    setDraftSaved('saving')
+    saveTimer.current = window.setTimeout(async () => {
+      try {
+        const payload: DraftPayload = { form: draftForm(form), re14, agency, forms: [forms.re21 && 're_21', forms.re14 && 're_14', forms.agency && 'agency_disclosure'].filter(Boolean) as string[], listing: listing ? { mlsNumber: listing.mlsNumber, address: listing.unparsedAddress, listAgentEmail: listing.listAgentEmail, listAgentName: listing.listAgentFullName } : null, source: 'mls' }
+        await api.saveDraft({ id: draftId, title: String(form.propertyAddress || listing?.unparsedAddress || 'Untitled'), source: 'mls', payload })
+        setDraftSaved('saved')
+      } catch { setDraftSaved('error') }
+    }, 1200)
+    return () => { if (saveTimer.current) window.clearTimeout(saveTimer.current) }
+  }, [form, re14, agency, forms, draftId, step]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- Step 1: MLS number or address ----
   async function search(e?: React.FormEvent) {
@@ -54,6 +90,7 @@ export default function NewDeal({ me }: { me: Me }) {
     setRe14((r) => ({ ...r, searchCity: l.city, searchCounty: l.countyOrParish || '', searchState: l.stateOrProvince || 'Idaho',
       cancellationPercentage: eff.cancellationPercentage || r.cancellationPercentage, compensationFlatFee: eff.compensationFlatFee || r.compensationFlatFee,
       compensationPercentage: eff.compensationPercentage || r.compensationPercentage, agencyType: eff.agencyType || r.agencyType, propertyType: eff.propertyType || r.propertyType }))
+    if (!draftId) setDraftId(crypto.randomUUID())
     setStep('review'); window.scrollTo(0, 0)
   }
 
@@ -79,7 +116,7 @@ export default function NewDeal({ me }: { me: Me }) {
     if (!confirm(`Send the packet to ${names} (${form.buyerEmail}${form.buyerEmailTwo ? ', ' + form.buyerEmailTwo : ''}) for signature via DocuSign ${me.docusign_env === 'production' ? 'PRODUCTION' : 'TEST'}?`)) return
     setBusy('send'); setError(null)
     try {
-      const r = await api.sendPacket(buildPacket(form, re14, agency, forms, { email: listing?.listAgentEmail, name: listing?.listAgentFullName }))
+      const r = await api.sendPacket(buildPacket(form, re14, agency, forms, { email: listing?.listAgentEmail, name: listing?.listAgentFullName }, draftId || undefined))
       navigate(`/deals/${r.deal_id}`)
     } catch (err) { setError(String(err)) } finally { setBusy(null) }
   }
@@ -146,7 +183,11 @@ export default function NewDeal({ me }: { me: Me }) {
       {stepper}
       <div className="pagehead">
         <div><h1>Review Packet</h1><p className="muted">{listing?.unparsedAddress} · MLS #{listing?.mlsNumber} · agent {me.first_name} {me.last_name}</p></div>
-        <div className="filters"><button className="link" onClick={() => setStep('search')}>← Different property</button></div>
+        <div className="filters">
+          <span className={`muted small savestate ${draftSaved}`}>{draftSaved === 'saving' ? 'Saving…' : draftSaved === 'saved' ? '✓ Draft saved — resume on any device' : draftSaved === 'error' ? 'Draft not saved (offline?)' : ''}</span>
+          {draftId && <button className="link danger" onClick={async () => { if (!confirm('Discard this draft?')) return; try { await api.deleteDraft(draftId) } catch { /* gone */ } navigate('/') }}>Discard draft</button>}
+          <button className="link" onClick={() => setStep('search')}>← Different property</button>
+        </div>
       </div>
 
       <div className="pills">

@@ -32,7 +32,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import Organization, CustomUser, OTPCode, Deal, DealDocument, DealActivity
+from .models import Organization, CustomUser, OTPCode, Deal, DealDocument, DealActivity, DealDraft
 from .serializers import OrganizationSerializer, CustomUserSerializer, DealSerializer, DealDocumentSerializer
 from django.core.mail import send_mail, EmailMessage
 from django.conf import settings
@@ -618,6 +618,11 @@ class SendOnboardingBundleEndpoint(APIView):
                 deal.fub_synced = True
                 deal.save(update_fields=["fub_synced"])
 
+            # The packet is sent — its draft is done.
+            if payload.get("draft_id"):
+                DealDraft.objects.filter(pk=payload["draft_id"], agent__organization_id=owner.organization_id).delete() \
+                    if owner.organization_id else DealDraft.objects.filter(pk=payload["draft_id"], agent=owner).delete()
+
             return Response({
                 "status": "sent",
                 "envelope_id": envelope_id,
@@ -1090,6 +1095,69 @@ class ContractDefaultsView(APIView):
         request.user.defaults = cleaned
         request.user.save(update_fields=["defaults"])
         return Response(defaults_service.bundle(request.user))
+
+
+def drafts_for(user):
+    """Drafts are personal, but a TC / team admin can pick up an agent's."""
+    if getattr(user, "is_superuser", False):
+        return DealDraft.objects.all()
+    if is_team_role(user) and getattr(user, "organization_id", None):
+        return DealDraft.objects.filter(agent__organization_id=user.organization_id)
+    return DealDraft.objects.filter(agent=user)
+
+
+def draft_json(d):
+    return {"id": str(d.id), "agent_id": str(d.agent_id), "agent_name": f"{d.agent.first_name} {d.agent.last_name}".strip(),
+            "title": d.title, "source": d.source, "revising_deal_id": d.revising_deal_id, "device": d.device,
+            "payload": d.payload, "created_at": d.created_at.isoformat(), "updated_at": d.updated_at.isoformat()}
+
+
+class DealDraftsView(APIView):
+    """GET /api/drafts/ — resumable packets (own; team for TC/admin).
+    POST /api/drafts/ {id?, title, source, payload, device, revising_deal_id?} — upsert (id from client = idempotent autosave)."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        return Response([draft_json(d) for d in drafts_for(request.user).select_related("agent")[:50]])
+
+    def post(self, request):
+        d = request.data
+        payload = d.get("payload")
+        if not isinstance(payload, dict):
+            return Response({"error": "payload must be an object"}, status=400)
+        draft = None
+        if d.get("id"):
+            draft = drafts_for(request.user).filter(pk=d["id"]).first()
+        if draft is None:
+            draft = DealDraft(agent=request.user)
+            if d.get("id"):
+                try:
+                    import uuid as _uuid
+                    draft.id = _uuid.UUID(str(d["id"]))
+                except ValueError:
+                    pass
+        draft.title = (d.get("title") or "")[:255]
+        draft.source = (d.get("source") or "")[:20]
+        draft.device = (d.get("device") or "")[:40]
+        draft.payload = payload
+        if "revising_deal_id" in d:
+            draft.revising_deal = Deal.objects.filter(pk=d["revising_deal_id"]).first() if d["revising_deal_id"] else None
+        draft.save()
+        return Response(draft_json(draft), status=201)
+
+
+class DealDraftDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        draft = drafts_for(request.user).filter(pk=pk).select_related("agent").first()
+        if draft is None:
+            return Response({"error": "Not found."}, status=404)
+        return Response(draft_json(draft))
+
+    def delete(self, request, pk):
+        drafts_for(request.user).filter(pk=pk).delete()
+        return Response(status=204)
 
 
 class DealStateView(APIView):

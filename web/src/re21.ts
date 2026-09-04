@@ -163,7 +163,7 @@ export function missingRequired(form: RE21): { section: string; label: string; k
 const isoDate = (v: unknown) => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) ? new Date(`${v}T12:00:00`).toISOString() : v
 const DATE_KEYS = new Set(['closingDate', 'offerExpirationDate', 'prorationDate'])
 
-function encodeRE21(form: RE21): RE21 {
+export function encodeRE21(form: RE21): RE21 {
   const out: RE21 = {}
   for (const [k, v] of Object.entries(form)) {
     if (v === undefined || v === null || v === '') continue  // Swift omits nil optionals
@@ -177,7 +177,7 @@ function encodeRE21(form: RE21): RE21 {
 export type Forms = { re21: boolean; re14: boolean; agency: boolean }
 
 /** PacketPayloadBuilder.body — one key per SELECTED form; specific fields overlay the RE-21, blanks dropped. */
-export function buildPacket(form: RE21, re14: Record<string, string>, agency: Record<string, string>, forms: Forms, listingAgent?: { email?: string; name?: string }) {
+export function buildPacket(form: RE21, re14: Record<string, string>, agency: Record<string, string>, forms: Forms, listingAgent?: { email?: string; name?: string }, draftId?: string) {
   const base = encodeRE21(form)
   const merged = (specific: Record<string, string>) => {
     const r: RE21 = { ...base }
@@ -189,6 +189,7 @@ export function buildPacket(form: RE21, re14: Record<string, string>, agency: Re
   const root: Record<string, unknown> = { buyers }
   if (listingAgent?.email) root.listing_agent_email = listingAgent.email
   if (listingAgent?.name) root.listing_agent_name = listingAgent.name
+  if (draftId) root.draft_id = draftId
   if (forms.re21) root.re21 = base
   if (forms.re14) root.re14 = merged(re14)
   if (forms.agency) root.agencyDisclosure = merged(agency)
@@ -221,4 +222,14 @@ export function applyDefaults(form: RE21, defaults: Record<string, unknown>): RE
     if (f[k] === undefined || f[k] === null || f[k] === '') f[k] = v
   }
   return f
+}
+
+/** Draft payload shared with iOS: RE-21 with ISO dates, nothing else transformed. */
+export function draftForm(form: RE21): RE21 {
+  const out: RE21 = {}
+  for (const [k, v] of Object.entries(form)) {
+    if (v === undefined || v === null || v === '') continue
+    out[k] = DATE_KEYS.has(k) ? isoDate(v) : v
+  }
+  return out
 }

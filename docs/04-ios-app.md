@@ -70,6 +70,7 @@ Tests live in `RealEstateAITests/` (validation view model, MLS timeline, collaps
   from `ProfileManager.effectiveFormData` and `freshRE14()`.
 - **Deadlines**: computed on device from the snapshot; local notifications day-before 9:00 and day-of 8:00;
   cancelled on archive/delete.
+- **Drafts**: `beginDraft` at every packet entry point; Combine observers on the review VM autosave; `resumeDraft` rebuilds the flow from the payload; send passes `draft_id` and the server deletes it.
 - **Deletion**: `pendingDeletionIds` hides a deal immediately and filters it out of refreshes until the server confirms.
 
 ## Release notes

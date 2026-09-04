@@ -38,6 +38,8 @@ Organization (team)        CustomUser                        Deal
                              fub_account_id                    form_snapshot JSON (the RE-21 as sent)
                                                                acceptance_date, is_archived, fub_synced, timestamps
 
+DealDraft (resumable packet): id UUID, agent FK, title, source mls|dictation|manual|revision, revising_deal FK?, payload JSON {form, re14, agency, forms[], listing, source}, device ios|web
+
 DealDocument (document trail)                 DealActivity (FUB events)            AppSetting (runtime switches)
   deal FK, doc_type re_13|re_10|re_11|other     deal FK, source 'fub', kind          key PK, value JSON, updated_by
   title, direction received|sent, sequence      title, body, actor, occurred_at
@@ -91,6 +93,7 @@ Root (`ApexIntegrationsAPI/urls.py`):
 | POST | `/api/deals/<id>/documents/send/` | generate+send RE-13 (`fields`) **or** accept a received PDF as-is (`source_document_id`); `resulting_terms` updates `form_snapshot` |
 | PATCH/DELETE | `/api/deals/<id>/documents/<doc_id>/` | status (`received|rejected|signed`) / delete |
 | GET | `/api/deals/<id>/activity/` | FUB activity feed |
+| GET/POST | `/api/drafts/`, GET/DELETE `/api/drafts/<uuid>/` | resumable packet drafts (own; team for TC/admin); POST upserts by client id; send with `draft_id` deletes it |
 | GET | `/api/mls/search/?address=`, `/api/mls/listing/<n>/` | RESO passthrough `{value:[...]}` (address OR city; top 50) |
 | GET/PATCH | `/api/defaults/` | agent's effective defaults `{team, mine, effective, locked}` / save `mine` |
 | GET/PATCH | `/api/team/`, POST `/api/team/members/`, PATCH `/api/team/members/<uuid>/`, GET/PATCH `/api/team/defaults/` | team admin |

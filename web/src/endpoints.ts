@@ -30,6 +30,11 @@ export function catalog(pf: Prefill): Endpoint[] {
     { id: 'state-patch', group: 'Deals', method: 'PATCH', path: '/api/deals/:id/state/', title: 'Merge checklist statuses', params: { id: pf.dealId }, body: { checklist_state: { 'p1.3': 'Complete' } } },
     { id: 'activity', group: 'Deals', method: 'GET', path: '/api/deals/:id/activity/', title: 'FUB activity on the deal', params: { id: pf.dealId } },
 
+    // ---- Drafts ----
+    { id: 'drafts', group: 'Drafts', method: 'GET', path: '/api/drafts/', title: 'Resumable packets (own / team)' },
+    { id: 'draft-save', group: 'Drafts', method: 'POST', path: '/api/drafts/', title: 'Save (upsert) a draft', body: { id: '00000000-0000-4000-8000-000000000001', title: pf.address, source: 'web', device: 'web', payload: { form: { propertyAddress: pf.address }, re14: {}, agency: {}, forms: ['re_21', 're_14', 'agency_disclosure'], listing: null } } },
+    { id: 'draft-delete', group: 'Drafts', method: 'DELETE', path: '/api/drafts/:draft_id/', title: 'Delete a draft', params: { draft_id: '00000000-0000-4000-8000-000000000001' }, danger: 'Deletes the draft.' },
+
     // ---- Documents ----
     { id: 'docs', group: 'Documents', method: 'GET', path: '/api/deals/:id/documents/', title: 'Document trail', params: { id: pf.dealId } },
     { id: 'doc-upload', group: 'Documents', method: 'POST', path: '/api/deals/:id/documents/', title: 'Upload a document (multipart)', params: { id: pf.dealId }, note: 'Multipart form: file (PDF), doc_type (re_13|re_10|other), direction. Use the deal page dropzone; this explorer sends JSON only.', body: { doc_type: 're_13', direction: 'received' } },

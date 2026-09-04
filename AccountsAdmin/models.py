@@ -261,3 +261,26 @@ class DealActivity(models.Model):
 
     def __str__(self):
         return f"{self.deal_id} {self.kind} {self.title}"
+
+
+class DealDraft(models.Model):
+    """A half-built packet, saved continuously so nothing typed is lost and
+    the agent can pick it up on any device (phone or web). Deleted when the
+    packet is sent. Payload shape is shared by iOS and web:
+      {form: <RE-21 JSON>, re14: {...}, agency: {...}, forms: ["re_21","re_14","agency_disclosure"],
+       listing: {mlsNumber, address, listAgentEmail, listAgentName} | null, source: "mls"|"dictation"|"manual"|"revision"}"""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    agent = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='drafts')
+    title = models.CharField(max_length=255, blank=True, default='')      # property address or "Untitled"
+    source = models.CharField(max_length=20, blank=True, default='')
+    revising_deal = models.ForeignKey('Deal', null=True, blank=True, on_delete=models.SET_NULL, related_name='revision_drafts')
+    payload = models.JSONField(default=dict, blank=True)
+    device = models.CharField(max_length=40, blank=True, default='')     # "ios" | "web" — last writer
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-updated_at']
+
+    def __str__(self):
+        return f"Draft {self.id} · {self.title or 'Untitled'}"

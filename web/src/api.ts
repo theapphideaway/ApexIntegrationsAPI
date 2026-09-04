@@ -34,6 +34,8 @@ export type DealDocument = {
   status: string; pdf_url: string | null; signed_pdf_url: string | null; created_at: string
 }
 export type DealActivity = { id: number; source: string; kind: string; title: string; body: string; actor: string; external_url: string; occurred_at: string }
+export type Draft = { id: string; agent_id: string; agent_name: string; title: string; source: string; revising_deal_id: number | null; device: string; payload: DraftPayload; created_at: string; updated_at: string }
+export type DraftPayload = { form: Record<string, unknown>; re14: Record<string, string>; agency: Record<string, string>; forms: string[]; listing: { mlsNumber?: string; address?: string; listAgentEmail?: string; listAgentName?: string } | null; source?: string }
 export type DealState = { checklist_state: Record<string, string>; form_snapshot: Record<string, unknown> | null; acceptance_date: string | null }
 
 export const auth = {
@@ -129,6 +131,11 @@ export const api = {
   fubRegisterWebhooks: (userId?: string) => request<Record<string, string>>('/api/auth/fub/webhooks/', { method: 'POST', body: JSON.stringify(userId ? { user_id: userId } : {}) }),
   sendDocument: (id: number, body: { doc_type: string; fields: Record<string, unknown>; buyers?: { name: string; email: string }[]; resulting_terms?: Record<string, unknown>; source_document_id?: number }) =>
     request<DealDocument>(`/api/deals/${id}/documents/send/`, { method: 'POST', body: JSON.stringify(body) }),
+  // ---- Drafts (resumable packets, any device) ----
+  drafts: () => request<Draft[]>('/api/drafts/'),
+  draft: (id: string) => request<Draft>(`/api/drafts/${id}/`),
+  saveDraft: (body: { id: string; title: string; source: string; payload: DraftPayload; revising_deal_id?: number | null }) => request<Draft>('/api/drafts/', { method: 'POST', body: JSON.stringify({ ...body, device: 'web' }) }),
+  deleteDraft: (id: string) => request<void>(`/api/drafts/${id}/`, { method: 'DELETE' }),
   // ---- Contract defaults ----
   defaults: () => request<{ team: Record<string, unknown>; mine: Record<string, unknown>; effective: Record<string, unknown>; locked: string[] }>('/api/defaults/'),
   patchMyDefaults: (mine: Record<string, unknown>) => request<{ team: Record<string, unknown>; mine: Record<string, unknown>; effective: Record<string, unknown>; locked: string[] }>('/api/defaults/', { method: 'PATCH', body: JSON.stringify({ mine }) }),
