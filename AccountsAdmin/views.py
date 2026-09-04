@@ -592,12 +592,17 @@ class SendOnboardingBundleEndpoint(APIView):
             # envelope we don't know about — so void it and tell the agent
             # plainly that nothing went out. (A concurrent duplicate send with
             # the same key resolves to the row that won.)
+            # Test mode: explicit flag wins; otherwise anything sent on the DocuSign
+            # demo account is a rehearsal (demo documents are watermarked anyway).
+            raw_test = payload.get("is_test")
+            is_test = bool(raw_test) if raw_test is not None else (ds_service.env != "production")
             try:
                 deal = Deal.objects.create(
                     docusign_env=ds_service.env,
                     agent=owner,
                     docusign_envelope_id=envelope_id,
                     send_key=send_key,
+                    is_test=is_test,
                     property_address=property_address,
                     buyer_names=buyer_names,
                     buyer_email=primary_buyer.get("email") or None,
@@ -649,7 +654,7 @@ class SendOnboardingBundleEndpoint(APIView):
                     link_html = f'<p>📄 <a href="{default_storage.url(draft_path)}" target="_blank">View the packet</a></p>'
                 except Exception:
                     pass
-            if fub_service.sync_document(
+            if not deal.is_test and fub_service.sync_document(
                 owner,
                 buyer_name=primary_buyer.get("name", buyer_names),
                 buyer_email=primary_buyer.get("email", ""),
@@ -779,7 +784,7 @@ def docusign_webhook(request):
                     f'<p>📄 <a href="{signed_link}" target="_blank">View the executed packet</a></p>'
                     if signed_link else ""
                 )
-                if fub_service.sync_document(
+                if not deal.is_test and fub_service.sync_document(
                     deal.agent,
                     buyer_name=deal.buyer_names,
                     buyer_email=deal.buyer_email or "",
@@ -1615,6 +1620,11 @@ class DistributeExecutedPacketEndpoint(APIView):
             destinations = []
             if title_email: destinations.append(title_email)
             if lender_email: destinations.append(lender_email)
+            # Test deals never email real title/lender companies — the copy goes
+            # to the sender so the flow can still be rehearsed end to end.
+            if dist_deal is not None and dist_deal.is_test:
+                destinations = [request.user.email]
+                property_address = f"[TEST] {property_address}"
 
             # 3. Use Django's native EmailMessage to forward the file
             email = EmailMessage(

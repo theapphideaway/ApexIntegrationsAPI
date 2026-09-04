@@ -137,7 +137,7 @@ def backfill_deals(user) -> int:
 
     synced = 0
     try:
-        for deal in Deal.objects.filter(agent=user, fub_synced=False):
+        for deal in Deal.objects.filter(agent=user, fub_synced=False, is_test=False):
             if deal.status == 'fully_executed':
                 subject = f"Contract fully executed — {deal.property_address}"
                 doc_key = deal.signed_pdf_url

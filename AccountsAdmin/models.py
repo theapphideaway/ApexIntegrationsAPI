@@ -185,6 +185,10 @@ class Deal(models.Model):
     # Idempotency: the client's send key (draft id or per-attempt UUID). A retry
     # with the same key returns this row instead of sending a second envelope.
     send_key = models.CharField(max_length=64, unique=True, null=True, blank=True)
+    # Test deal: rehearsal with zero client footprint — no CRM sync, outbound
+    # emails redirected to the sender, badged everywhere, purgeable in bulk.
+    # Defaults to True for envelopes sent on the DocuSign demo account.
+    is_test = models.BooleanField(default=False)
 
     # S3 keys (legacy rows hold full presigned URLs, which run past 500
     # chars — TextField so Postgres accepts the old data).

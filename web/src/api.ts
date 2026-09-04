@@ -26,7 +26,7 @@ export type Deal = {
   id: number; agent_id: string; agent_name: string; agent_team?: string; property_address: string; buyer_names: string
   listing_agent_email?: string | null; listing_agent_name?: string
   status: string; status_display: string; docusign_envelope_id: string | null
-  draft_pdf_url: string | null; signed_pdf_url: string | null; signed_re21_url?: string | null; is_archived: boolean
+  draft_pdf_url: string | null; signed_pdf_url: string | null; signed_re21_url?: string | null; is_archived: boolean; is_test?: boolean
   acceptance_date: string | null; form_snapshot: Record<string, any> | null; updated_at: string
 }
 export type DealDocument = {
@@ -157,6 +157,8 @@ export const api = {
     createTeam: (body: { name: string; plan_type?: string }) => request<Team>('/api/dev/teams/', { method: 'POST', body: JSON.stringify(body) }),
     patchTeam: (id: string, body: Partial<Team>) => request<Team>(`/api/dev/teams/${id}/`, { method: 'PATCH', body: JSON.stringify(body) }),
     users: () => request<PortalUser[]>('/api/dev/users/'),
+    testDeals: () => request<{ count: number; deals: { id: number; property_address: string; buyer_names: string; status: string; agent: string }[] }>('/api/dev/test-deals/'),
+    purgeTestDeals: () => request<{ deleted: number; voided_envelopes: number; errors: string[] }>('/api/dev/test-deals/purge/', { method: 'POST', body: '{}' }),
     createUser: (body: { email: string; first_name: string; last_name: string; phone_number?: string; role: string; organization: string }) => request<PortalUser>('/api/dev/users/', { method: 'POST', body: JSON.stringify(body) }),
     patchUser: (id: string, body: Record<string, unknown>) => request<PortalUser>(`/api/dev/users/${id}/`, { method: 'PATCH', body: JSON.stringify(body) }),
     deleteUser: (id: string, confirmDeals = false) => request<void>(`/api/dev/users/${id}/`, { method: 'DELETE', body: JSON.stringify({ confirm_deals: confirmDeals }) }),

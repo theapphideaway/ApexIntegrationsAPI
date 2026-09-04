@@ -76,7 +76,8 @@ export default function DealPage({ me }: { me: Me }) {
         return (
           <div className="hero">
             <div className="kicker"><Link to="/" style={{ color: '#9fb3c8' }}>Pipeline</Link> / Deal</div>
-            <h1>{deal.property_address}</h1>
+            <h1>{deal.is_test && <span className="testbadge big">TEST DEAL</span>}{deal.property_address}</h1>
+            {deal.is_test && <p className="small" style={{ color: '#fcd34d', margin: '-6px 0 10px' }}>Rehearsal: no CRM sync, title/lender emails go to the sender, and it can be purged from the Developer portal.</p>}
             <div className="facts">
               <div className="fact"><div className="k">Buyer</div><div className="v">{deal.buyer_names}</div></div>
               {teamView && <div className="fact"><div className="k">Agent</div><div className="v">{deal.agent_name}</div></div>}

@@ -63,6 +63,13 @@ Pricing note: envelopes are per company (one API user sends everything); a deal 
   *listeners*, or `POST /api/auth/fub/webhooks/`). Events → `DealActivity` matched by the buyer's email.
 - `FUB_SYSTEM_KEY` set → `FUB-Signature` HMAC verified; unset → the signed account token in the URL is the gate.
 
+## Testing safely
+
+Use **test deals** (default for anything sent on DocuSign demo): they never touch Follow Up Boss, redirect
+title/lender emails to the sender, and are excluded from stats. Buyer emails can be your own with plus-addressing.
+Purge them from Developer → Test deals. A real transaction on demo is impossible anyway (watermarked documents);
+production DocuSign sends default to *real* deals.
+
 ## Backups and data
 
 - Postgres on PythonAnywhere (`apexdb`); credentials only in `DATABASE_URL`. **TODO**: scheduled `pg_dump`.

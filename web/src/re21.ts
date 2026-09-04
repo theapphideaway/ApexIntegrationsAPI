@@ -177,7 +177,7 @@ export function encodeRE21(form: RE21): RE21 {
 export type Forms = { re21: boolean; re14: boolean; agency: boolean }
 
 /** PacketPayloadBuilder.body — one key per SELECTED form; specific fields overlay the RE-21, blanks dropped. */
-export function buildPacket(form: RE21, re14: Record<string, string>, agency: Record<string, string>, forms: Forms, listingAgent?: { email?: string; name?: string }, draftId?: string) {
+export function buildPacket(form: RE21, re14: Record<string, string>, agency: Record<string, string>, forms: Forms, listingAgent?: { email?: string; name?: string }, draftId?: string, isTest?: boolean) {
   const base = encodeRE21(form)
   const merged = (specific: Record<string, string>) => {
     const r: RE21 = { ...base }
@@ -190,6 +190,7 @@ export function buildPacket(form: RE21, re14: Record<string, string>, agency: Re
   if (listingAgent?.email) root.listing_agent_email = listingAgent.email
   if (listingAgent?.name) root.listing_agent_name = listingAgent.name
   if (draftId) { root.draft_id = draftId; root.send_key = draftId }   // idempotent retry
+  if (isTest !== undefined) root.is_test = isTest
   if (forms.re21) root.re21 = base
   if (forms.re14) root.re14 = merged(re14)
   if (forms.agency) root.agencyDisclosure = merged(agency)

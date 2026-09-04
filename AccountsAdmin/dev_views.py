@@ -173,3 +173,36 @@ class DevUserDetailView(APIView):
             return Response({"error": f"{user.email} owns {n} deal(s). Reassign them or pass confirm_deals=true to delete the deals too."}, status=409)
         user.delete()
         return Response(status=204)
+
+
+class DevTestDealsView(APIView):
+    """GET  /api/dev/test-deals/  → count + list of test deals platform-wide
+    POST /api/dev/test-deals/purge/ → delete them all (voids in-flight envelopes, removes files)."""
+    permission_classes = [IsSuperuser]
+
+    def get(self, request):
+        deals = Deal.objects.filter(is_test=True).select_related("agent")
+        return Response({"count": deals.count(), "deals": [
+            {"id": d.id, "property_address": d.property_address, "buyer_names": d.buyer_names, "status": d.status,
+             "agent": f"{d.agent.first_name} {d.agent.last_name}".strip(), "docusign_env": d.docusign_env} for d in deals[:200]]})
+
+    def post(self, request):
+        from django.core.files.storage import default_storage
+        deleted, voided, errors = 0, 0, []
+        for d in list(Deal.objects.filter(is_test=True)):
+            env_id, env, status = d.docusign_envelope_id, d.docusign_env, d.status
+            files = [k for k in (d.draft_pdf_url, d.signed_pdf_url, d.signed_re21_url) if k]
+            files += [k for doc in d.documents.all() for k in (doc.pdf_key, doc.signed_pdf_key) if k]
+            d.delete(); deleted += 1
+            if env_id and status in ("out_for_signature", "signed_by_buyers"):
+                try:
+                    DocuSignService(env=env).void_envelope(env_id, reason="Test deal purged"); voided += 1
+                except Exception as e:
+                    errors.append(f"{env_id}: {e}")
+            for key in files:
+                try:
+                    if not key.startswith("http"):
+                        default_storage.delete(key)
+                except Exception:
+                    pass
+        return Response({"deleted": deleted, "voided_envelopes": voided, "errors": errors})

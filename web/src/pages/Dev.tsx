@@ -26,6 +26,7 @@ function DevOverview({ me }: { me: Me }) {
   const [users, setUsers] = useState<PortalUser[]>([])
   const [error, setError] = useState<string | null>(null)
   const [testResult, setTestResult] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [newTeam, setNewTeam] = useState('')
   const [newUser, setNewUser] = useState({ email: '', first_name: '', last_name: '', phone_number: '', role: 'agent', organization: '' })
@@ -48,6 +49,7 @@ function DevOverview({ me }: { me: Me }) {
     <>
       <p className="muted small" style={{ marginBottom: 12 }}>DB: {cfg.server.db_engine} · DEBUG {String(cfg.server.debug)}</p>
       {error && <p className="error">{error}</p>}
+      {notice && <p className="notice">{notice}</p>}
 
       <section className="card" style={{ marginBottom: 20 }}>
         <div className="cardhead"><h2>DocuSign environments</h2><span className={`status ${ds.master_production ? 'bad' : 'warn'}`}>MASTER: {ds.master_production ? 'PRODUCTION ENABLED' : 'TEST ONLY'}</span></div>
@@ -106,6 +108,11 @@ function DevOverview({ me }: { me: Me }) {
           </form>
         </section>
       </div>
+
+      <section className="card" style={{ marginTop: 20 }}>
+        <div className="cardhead"><h2>Test deals</h2><button className="link danger" disabled={busy !== null} onClick={async () => { const t = await api.dev.testDeals(); if (!t.count) { setNotice('No test deals to purge.'); return } if (!confirm(`Purge ${t.count} test deal(s)? Their envelopes are voided and files removed. Real deals are untouched.`)) return; setBusy('purge'); try { const r = await api.dev.purgeTestDeals(); setNotice(`Purged ${r.deleted} test deal(s), voided ${r.voided_envelopes} envelope(s)${r.errors.length ? `, ${r.errors.length} void error(s)` : ''}.`) } catch (e) { setError(String(e)) } finally { setBusy(null) } }}>Purge all test deals</button></div>
+        <p className="muted small">Packets sent on the DocuSign demo account are test deals by default (agents can untick it on the preview step). Test deals never sync to Follow Up Boss, redirect title/lender emails to the sender, are badged TEST, and are excluded from stats and Due Soon.</p>
+      </section>
 
       <section className="card" style={{ marginTop: 20 }}>
         <div className="cardhead"><h2>Users</h2><span className="muted small">{users.length} total</span></div>

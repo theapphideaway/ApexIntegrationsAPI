@@ -118,6 +118,17 @@ Each feature: what it does, where the code lives (server / web / iOS), the endpo
 - **Code**: `SendOnboardingBundleEndpoint`, `DealDocumentSendView`; iOS `FormFlowCoordinator.sendKey`,
   `CounterOfferSheet.sendKey`; web `buildPacket` (`send_key = draftId`), `CounterForm`.
 
-## 15. Dictation → RE-21 (phone only)
+## 15. Test mode for deals (rehearse with zero client footprint)
+- **What**: `Deal.is_test`. Default = the packet was sent on the DocuSign **demo** account (demo documents are
+  watermarked anyway); the agent can untick "Test deal" on the preview step, and production sends default to real.
+  Test deals: **never** sync to Follow Up Boss (send, completion, backfill), title/lender distribution goes to the
+  sender with a `[TEST]` subject, badged TEST on the pipeline/deal page/cards, excluded from pipeline stats and Due
+  Soon (toggle to include), and purgeable in one click (Developer → Test deals → Purge: voids in-flight envelopes,
+  removes files). Real deals are never touched by the purge.
+- **Code**: `SendOnboardingBundleEndpoint` (`is_test`), `DistributeExecutedPacketEndpoint`, `fub_service.backfill_deals`,
+  `dev_views.DevTestDealsView`; web `NewDeal` toggle, `Pipeline`/`DueSoon`/`Deal` badges + filters, `Dev` purge;
+  iOS `PDFPreviewView` toggle, `DealCard`/dashboard badge.
+
+## 16. Dictation → RE-21 (phone only)
 - Record → transcription → OpenAI structured extraction → RE-21 → MLS enrichment by extracted address → review.
   The OpenAI key is in the app; move it behind the server before wide release.

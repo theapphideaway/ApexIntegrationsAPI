@@ -76,6 +76,8 @@ urlpatterns = [
     path('api/dev/teams/<uuid:pk>/', dev_views.DevTeamDetailView.as_view(), name='dev-team-detail'),
     path('api/dev/users/', dev_views.DevUsersView.as_view(), name='dev-users'),
     path('api/dev/users/<uuid:pk>/', dev_views.DevUserDetailView.as_view(), name='dev-user-detail'),
+    path('api/dev/test-deals/', dev_views.DevTestDealsView.as_view(), name='dev-test-deals'),
+    path('api/dev/test-deals/purge/', dev_views.DevTestDealsView.as_view(), name='dev-test-deals-purge'),
 
     # Web portal (built React app in web/dist), same origin as the API.
     re_path(r'^portal/assets/(?P<path>.*)$', static_serve, {'document_root': settings.BASE_DIR / 'web' / 'dist' / 'assets'}),
