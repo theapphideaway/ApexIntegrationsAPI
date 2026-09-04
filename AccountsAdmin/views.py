@@ -683,9 +683,6 @@ class SendOnboardingBundleEndpoint(APIView):
             return Response({"error": f"Failed to send bundle: {str(e)}"}, status=500)
 
 
-@csrf_exempt
-@api_view(['POST'])
-@permission_classes([AllowAny])
 def file_completed_envelope(envelope_id: str, documents: list) -> dict:
     """The single place an envelope becomes 'done': merge the signed documents,
     store the packet (+ RE-21-only copy), update the Deal or DealDocument, CRM
@@ -801,6 +798,9 @@ def reconcile_document(doc) -> dict:
     return info
 
 
+@csrf_exempt
+@api_view(['POST'])
+@permission_classes([AllowAny])
 def docusign_webhook(request):
     try:
         data = request.data
