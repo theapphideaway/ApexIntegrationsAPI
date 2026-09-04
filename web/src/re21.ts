@@ -189,7 +189,7 @@ export function buildPacket(form: RE21, re14: Record<string, string>, agency: Re
   const root: Record<string, unknown> = { buyers }
   if (listingAgent?.email) root.listing_agent_email = listingAgent.email
   if (listingAgent?.name) root.listing_agent_name = listingAgent.name
-  if (draftId) root.draft_id = draftId
+  if (draftId) { root.draft_id = draftId; root.send_key = draftId }   // idempotent retry
   if (forms.re21) root.re21 = base
   if (forms.re14) root.re14 = merged(re14)
   if (forms.agency) root.agencyDisclosure = merged(agency)

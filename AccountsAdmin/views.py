@@ -10,6 +10,7 @@ import pymupdf
 from django.contrib.auth import get_user_model
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
+from django.db import IntegrityError
 from django.db.models import Q
 from django.http import HttpResponse
 from django.shortcuts import render
@@ -543,6 +544,15 @@ class SendOnboardingBundleEndpoint(APIView):
             apply_agent_identity(doc_payload, owner)
             defaults_service.apply_defaults(doc_payload, owner)
 
+        # Idempotency: a retry of the same send (same draft / attempt key) must
+        # never create a second envelope for the buyer.
+        send_key = (payload.get("send_key") or payload.get("draft_id") or "")[:64] or None
+        if send_key:
+            existing = Deal.objects.filter(send_key=send_key).first()
+            if existing is not None:
+                return Response({"status": "already_sent", "envelope_id": existing.docusign_envelope_id,
+                                 "deal_id": existing.id}, status=200)
+
         try:
             # 3. Call your multi-document bundle method
             ds_service = DocuSignService(env=DocuSignService.env_for_user(owner))
@@ -578,20 +588,55 @@ class SendOnboardingBundleEndpoint(APIView):
             except Exception as e:
                 print(f"Draft packet S3 save failed (non-fatal): {e}")
 
-            # 5. Save/Update Deal in Postgres
-            deal = Deal.objects.create(
-                docusign_env=ds_service.env,
-                agent=owner,
-                docusign_envelope_id=envelope_id,
-                property_address=property_address,
-                buyer_names=buyer_names,
-                buyer_email=primary_buyer.get("email") or None,
-                listing_agent_email=(payload.get("listing_agent_email") or None),
-                listing_agent_name=(payload.get("listing_agent_name") or "")[:150],
-                draft_pdf_url=draft_path,
-                form_snapshot=re21_data,   # server-side copy → any device can revise
-                status='out_for_signature'
-            )
+            # 5. Save the Deal. If this fails the buyer would be holding an
+            # envelope we don't know about — so void it and tell the agent
+            # plainly that nothing went out. (A concurrent duplicate send with
+            # the same key resolves to the row that won.)
+            try:
+                deal = Deal.objects.create(
+                    docusign_env=ds_service.env,
+                    agent=owner,
+                    docusign_envelope_id=envelope_id,
+                    send_key=send_key,
+                    property_address=property_address,
+                    buyer_names=buyer_names,
+                    buyer_email=primary_buyer.get("email") or None,
+                    listing_agent_email=(payload.get("listing_agent_email") or None),
+                    listing_agent_name=(payload.get("listing_agent_name") or "")[:150],
+                    draft_pdf_url=draft_path,
+                    form_snapshot=re21_data,   # server-side copy → any device can revise
+                    status='out_for_signature'
+                )
+            except IntegrityError:
+                winner = Deal.objects.filter(send_key=send_key).first() if send_key else None
+                try:
+                    ds_service.void_envelope(envelope_id, reason="Duplicate send")
+                except Exception as ve:
+                    print(f"Void after duplicate send failed: {ve}")
+                if winner is not None:
+                    return Response({"status": "already_sent", "envelope_id": winner.docusign_envelope_id,
+                                     "deal_id": winner.id}, status=200)
+                raise
+            except Exception as create_err:
+                try:
+                    ds_service.void_envelope(envelope_id, reason="Deal record could not be saved")
+                    voided = True
+                except Exception as ve:
+                    print(f"Void after failed deal save FAILED: {ve}")
+                    voided = False
+                if draft_path:
+                    try:
+                        default_storage.delete(draft_path)
+                    except Exception:
+                        pass
+                print(f"Deal save failed after envelope {envelope_id}: {create_err}")
+                return Response({
+                    "error": ("The packet was NOT sent — the signing request was cancelled because the deal couldn't be saved. "
+                              "Nothing reached the buyer. Please try again.") if voided else
+                             ("The deal couldn't be saved and the signing request could not be cancelled automatically. "
+                              f"Do not resend; contact support with envelope {envelope_id}."),
+                    "retryable": voided, "envelope_id": envelope_id,
+                }, status=502)
 
             # 6. CRM sync — the packet appears on the buyer's FUB timeline.
             # Never blocks the send: sync_document swallows its own failures.
@@ -988,6 +1033,12 @@ class DealDocumentSendView(APIView):
         # to the buyer(s) to sign, untouched. Nothing to retype — the buyer
         # signs the seller's own document. Tabs are placed by position on
         # the standard Idaho RE-13 layout.
+        send_key = (request.data.get("send_key") or "")[:64] or None
+        if send_key:
+            existing = deal.documents.filter(send_key=send_key).first()
+            if existing is not None:
+                return Response(DealDocumentSerializer(existing).data, status=200)
+
         source_id = request.data.get("source_document_id")
         if source_id:
             source = deal.documents.filter(pk=source_id, direction='received').first()
@@ -1007,12 +1058,19 @@ class DealDocumentSendView(APIView):
                 )
             except Exception as e:
                 return Response({"error": f"DocuSign send failed: {e}"}, status=502)
-            doc = DealDocument.objects.create(
-                deal=deal, doc_type=source.doc_type, title=f"{source.title} — accepted", direction='sent',
-                sequence=source.sequence, status='out_for_signature',
-                docusign_envelope_id=result.get("envelope_id"), pdf_key=source.pdf_key,
-                docusign_env=ds_service.env,
-            )
+            try:
+                doc = DealDocument.objects.create(
+                    deal=deal, doc_type=source.doc_type, title=f"{source.title} — accepted", direction='sent',
+                    sequence=source.sequence, status='out_for_signature',
+                    docusign_envelope_id=result.get("envelope_id"), pdf_key=source.pdf_key,
+                    docusign_env=ds_service.env, send_key=send_key,
+                )
+            except Exception as create_err:
+                try:
+                    ds_service.void_envelope(result.get("envelope_id"), reason="Document record could not be saved")
+                except Exception as ve:
+                    print(f"Void after failed document save FAILED: {ve}")
+                return Response({"error": "The counter was NOT sent — the signing request was cancelled because it couldn't be recorded. Please try again.", "retryable": True}, status=502)
             source.status = 'signed'   # responded — the banner clears; the sent copy carries the envelope
             source.save(update_fields=["status"])
             terms = request.data.get("resulting_terms")
@@ -1056,11 +1114,18 @@ class DealDocumentSendView(APIView):
             except Exception as e:
                 print(f"Draft save failed (non-fatal): {e}")
 
-        doc = DealDocument.objects.create(
-            deal=deal, doc_type=doc_type, title=title, direction='sent', sequence=sequence,
-            status='out_for_signature', docusign_envelope_id=envelope_id, pdf_key=draft_key,
-            docusign_env=ds_service.env,
-        )
+        try:
+            doc = DealDocument.objects.create(
+                deal=deal, doc_type=doc_type, title=title, direction='sent', sequence=sequence,
+                status='out_for_signature', docusign_envelope_id=envelope_id, pdf_key=draft_key,
+                docusign_env=ds_service.env, send_key=send_key,
+            )
+        except Exception as create_err:
+            try:
+                ds_service.void_envelope(envelope_id, reason="Document record could not be saved")
+            except Exception as ve:
+                print(f"Void after failed document save FAILED: {ve}")
+            return Response({"error": "The counter was NOT sent — the signing request was cancelled because it couldn't be recorded. Please try again.", "retryable": True}, status=502)
 
         # Accepted counter → the deal's effective terms change.
         terms = request.data.get("resulting_terms")

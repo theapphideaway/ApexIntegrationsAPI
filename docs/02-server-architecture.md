@@ -73,7 +73,7 @@ Prefix `/api/auth/` (`AccountsAdmin/urls.py`):
 | GET | `users/me/` | current user (+ `is_superuser`, `docusign_production`, `docusign_env`) |
 | GET/POST | `users/`, `organizations/`, `add-user/`, `add-organization/`, DELETE `delete-user/<uuid>/` | legacy admin endpoints (`IsAdminRole`) |
 | POST | `documents/preview/<doc_type>/` | render one form → PDF bytes |
-| POST | `documents/send/<doc_type>/` | **send the packet** (`re_21`): `{buyers[], re21, re14?, agencyDisclosure?, agent_id?, listing_agent_email?, listing_agent_name?}` → `{envelope_id, deal_id}` |
+| POST | `documents/send/<doc_type>/` | **send the packet** (`re_21`): `{buyers[], re21, re14?, agencyDisclosure?, agent_id?, listing_agent_email?, listing_agent_name?, draft_id?, send_key?}` → `{status: sent|already_sent, envelope_id, deal_id}`; voids the envelope + `502 retryable` if the deal can't be saved |
 | POST | `api/documents/distribute/` | email the executed RE-21 (RE-21-only copy preferred) to title/lender |
 | GET/DELETE | `fub/status/`, GET `fub/connect-url/`, GET `fub/callback/`, POST `fub/backfill/`, POST `fub/send/` | FUB outbound |
 | GET/POST | `fub/webhooks/` ; POST `fub/webhook/<token>/` | FUB inbound listeners (register / delivery, no auth + HMAC) |

@@ -15,6 +15,7 @@ export default function CounterForm({ deal, mode, nextNumber, received, onClose,
   const [newClosing, setNewClosing] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [sendKey] = useState(() => crypto.randomUUID())   // one per dialog: retries can't double-send
 
   async function acceptAsIs(e: React.FormEvent) {
     e.preventDefault(); if (!received) return
@@ -23,7 +24,7 @@ export default function CounterForm({ deal, mode, nextNumber, received, onClose,
       const resulting: Record<string, unknown> = {}
       if (newPrice) resulting.offerPrice = Number(newPrice.replace(/[^0-9.]/g, ''))
       if (newClosing) resulting.closingDate = new Date(newClosing).toISOString()
-      await api.sendDocument(deal.id, { doc_type: 're_13', fields: {}, source_document_id: received.id, resulting_terms: Object.keys(resulting).length ? resulting : undefined })
+      await api.sendDocument(deal.id, { doc_type: 're_13', fields: {}, source_document_id: received.id, resulting_terms: Object.keys(resulting).length ? resulting : undefined, send_key: sendKey })
       onSent()
     } catch (err) { setError(String(err)) } finally { setBusy(false) }
   }
@@ -45,6 +46,7 @@ export default function CounterForm({ deal, mode, nextNumber, received, onClose,
           psaDate: deal.acceptance_date || '',
         },
         resulting_terms: Object.keys(resulting).length ? resulting : undefined,
+        send_key: sendKey,
       })
       onSent()
     } catch (err) { setError(String(err)) } finally { setBusy(false) }

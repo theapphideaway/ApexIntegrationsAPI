@@ -129,7 +129,7 @@ export const api = {
   documents: (id: number) => request<DealDocument[]>(`/api/deals/${id}/documents/`),
   activity: (id: number) => request<DealActivity[]>(`/api/deals/${id}/activity/`),
   fubRegisterWebhooks: (userId?: string) => request<Record<string, string>>('/api/auth/fub/webhooks/', { method: 'POST', body: JSON.stringify(userId ? { user_id: userId } : {}) }),
-  sendDocument: (id: number, body: { doc_type: string; fields: Record<string, unknown>; buyers?: { name: string; email: string }[]; resulting_terms?: Record<string, unknown>; source_document_id?: number }) =>
+  sendDocument: (id: number, body: { doc_type: string; fields: Record<string, unknown>; buyers?: { name: string; email: string }[]; resulting_terms?: Record<string, unknown>; source_document_id?: number; send_key?: string }) =>
     request<DealDocument>(`/api/deals/${id}/documents/send/`, { method: 'POST', body: JSON.stringify(body) }),
   // ---- Drafts (resumable packets, any device) ----
   drafts: () => request<Draft[]>('/api/drafts/'),

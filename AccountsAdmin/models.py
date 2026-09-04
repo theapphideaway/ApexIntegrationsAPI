@@ -182,6 +182,9 @@ class Deal(models.Model):
     # DocuSign Tracking
     docusign_envelope_id = models.CharField(max_length=100, blank=True, null=True)
     docusign_env = models.CharField(max_length=12, default='demo')  # 'demo' | 'production'
+    # Idempotency: the client's send key (draft id or per-attempt UUID). A retry
+    # with the same key returns this row instead of sending a second envelope.
+    send_key = models.CharField(max_length=64, unique=True, null=True, blank=True)
 
     # S3 keys (legacy rows hold full presigned URLs, which run past 500
     # chars — TextField so Postgres accepts the old data).
@@ -219,6 +222,7 @@ class DealDocument(models.Model):
     status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='received')
     docusign_envelope_id = models.CharField(max_length=100, blank=True, null=True)
     docusign_env = models.CharField(max_length=12, default='demo')  # 'demo' | 'production'
+    send_key = models.CharField(max_length=64, unique=True, null=True, blank=True)  # idempotent counter sends
     pdf_key = models.CharField(max_length=500, blank=True, null=True)
     signed_pdf_key = models.CharField(max_length=500, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)

@@ -109,6 +109,15 @@ Each feature: what it does, where the code lives (server / web / iOS), the endpo
 - **Web**: `NewDeal.tsx` autosave + `?draft=<id>` resume, `Pipeline.tsx` Drafts strip.
 - **Payload contract** (shared): `{form: RE-21 JSON with ISO dates, re14, agency, forms: ["re_21","re_14","agency_disclosure"], listing, source}`.
 
-## 14. Dictation → RE-21 (phone only)
+## 14. Atomic send (off-ramp: never a packet we don't know about)
+- **What**: every send carries a `send_key` (the draft id, or a per-attempt UUID). A retry with the same key returns
+  the existing deal/document (`status: already_sent`) instead of creating a second envelope. If the envelope was
+  created but the `Deal`/`DealDocument` row can't be saved, the server **voids the envelope**, deletes the draft PDF,
+  and answers `502 {error, retryable: true}` with plain language ("The packet was NOT sent…"). Concurrent duplicate
+  sends collide on the unique key; the loser voids its envelope and returns the winner.
+- **Code**: `SendOnboardingBundleEndpoint`, `DealDocumentSendView`; iOS `FormFlowCoordinator.sendKey`,
+  `CounterOfferSheet.sendKey`; web `buildPacket` (`send_key = draftId`), `CounterForm`.
+
+## 15. Dictation → RE-21 (phone only)
 - Record → transcription → OpenAI structured extraction → RE-21 → MLS enrichment by extracted address → review.
   The OpenAI key is in the app; move it behind the server before wide release.
