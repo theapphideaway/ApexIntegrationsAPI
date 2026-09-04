@@ -47,16 +47,15 @@ def bundle(user):
 
 def apply_defaults(doc_payload: dict, user) -> dict:
     """Fill EMPTY fields of a document payload from the effective defaults.
-    Values the agent typed (or the MLS supplied) always win — except locked
-    team keys, which are enforced."""
+    A value the agent set on THIS deal (or the MLS supplied) always wins —
+    "locked" means the agent can't change the team's DEFAULT, not that a
+    negotiated per-deal term gets silently overwritten at send time."""
     if not isinstance(doc_payload, dict):
         return doc_payload
-    team = team_defaults(user)
     for k, v in effective_defaults(user).items():
         if k in CONTACT_KEYS:
             continue
-        current = doc_payload.get(k)
-        if k in team or current in (None, "", [], {}):
+        if doc_payload.get(k) in (None, "", [], {}):
             doc_payload[k] = v
     # Contacts map onto the RE-21's title company field when it is blank.
     contacts = {k: v for k, v in effective_defaults(user).items() if k in CONTACT_KEYS}
