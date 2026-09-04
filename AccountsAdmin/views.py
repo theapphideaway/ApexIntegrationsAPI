@@ -797,11 +797,34 @@ def reconcile_document(doc) -> dict:
     return info
 
 
+def _connect_signature_ok(request) -> bool:
+    """DocuSign Connect HMAC: X-DocuSign-Signature-N = base64(HMAC-SHA256(key, raw body)).
+    Verified only when DOCUSIGN_CONNECT_HMAC_KEYS is set on the server; any
+    configured key matching any signature header passes (keys rotate)."""
+    import hmac as _hmac
+    import hashlib
+    keys = DocuSignService.connect_hmac_keys()
+    if not keys:
+        return True
+    body = request.body  # read BEFORE request.data so Django caches the raw bytes
+    sigs = [v for h, v in request.headers.items() if h.lower().startswith("x-docusign-signature-")]
+    if not sigs:
+        return False
+    for key in keys:
+        expected = base64.b64encode(_hmac.new(key.encode("utf-8"), body, hashlib.sha256).digest()).decode()
+        if any(_hmac.compare_digest(expected, s.strip()) for s in sigs):
+            return True
+    return False
+
+
 @csrf_exempt
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def docusign_webhook(request):
     try:
+        if not _connect_signature_ok(request):
+            print("⛔ Connect webhook rejected: bad or missing HMAC signature")
+            return Response({"status": "error", "message": "invalid signature"}, status=401)
         data = request.data
         event = data.get("event")
         if event == "envelope-completed":

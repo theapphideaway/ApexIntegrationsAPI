@@ -26,7 +26,7 @@ The web portal ships as the prebuilt `web/dist` (committed). No Node on the serv
 | Email | `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `DEFAULT_FROM_EMAIL` (Gmail SMTP; DMARC fails for business-domain recipients until SES/Postmark) |
 | S3 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_STORAGE_BUCKET_NAME`, `AWS_S3_REGION_NAME` |
 | DocuSign demo | `DOCUSIGN_CLIENT_ID`, `DOCUSIGN_USER_ID`, `DOCUSIGN_ACCOUNT_ID`, file `private_key.pem` (repo root, gitignored) |
-| DocuSign production | `DOCUSIGN_PROD_CLIENT_ID`, `DOCUSIGN_PROD_USER_ID`, `DOCUSIGN_PROD_ACCOUNT_ID`, `DOCUSIGN_PROD_BASE_PATH` (e.g. `https://na4.docusign.net/restapi`), file `private_key_prod.pem` (`DOCUSIGN_PROD_PRIVATE_KEY` overrides the name) |
+| DocuSign production | `DOCUSIGN_PROD_CLIENT_ID`, `DOCUSIGN_PROD_USER_ID`, `DOCUSIGN_PROD_ACCOUNT_ID`, file `private_key_prod.pem` (`DOCUSIGN_PROD_PRIVATE_KEY` overrides the name); optional `DOCUSIGN_PROD_BASE_PATH` (auto-resolved), `DOCUSIGN_CONNECT_HMAC_KEYS` (webhook signature check), `DOCUSIGN_WEBHOOK_URL`, `DOCUSIGN_CONSENT_REDIRECT` |
 | MLS | `MLS_API_BASE_URL`, `MLS_API_TOKEN`, `MLS_LISTING_ID_FIELD` (default `ListingId`) |
 | Follow Up Boss | `FUB_CLIENT_ID`, `FUB_CLIENT_SECRET`, `FUB_SYSTEM_KEY` (optional; enables HMAC verification of inbound webhooks) |
 | Pusher | `PUSHER_APP_ID`, `PUSHER_KEY`, `PUSHER_SECRET`, `PUSHER_CLUSTER` |
@@ -42,16 +42,31 @@ Secrets never go in the database or the repo. Runtime *switches* live in the `Ap
 
 ## DocuSign production cutover checklist
 
-1. Production account: create integration key, RSA keypair, note API user ID, account ID, base URI.
-2. Grant consent for the key (one-time, as the impersonated user).
-3. Put the four `DOCUSIGN_PROD_*` vars + `private_key_prod.pem` on the server; reload.
-4. Developer portal → DocuSign environments → **Test connection** on Production (JWT + userinfo; checks the account id).
-5. Account settings on production (as on demo): signing time format `h:mm` + AM/PM, timezone Mountain
-   (`TZ_55_MountainStandardTime`), `signDateTimeAccountTimezoneOverride`, `attachCompletedEnvelope`.
-6. Connect webhook on production → `https://www.apexintegrations.ai/api/contracts/webhook/`, event
-   *envelope-completed*, **Include Document PDFs** on (the webhook needs `PDFBytes`).
-7. Flag one user PROD (Developer → Users), send one real packet, verify the webhook filed it, then flip the master.
-8. Go-live promotion of the key in DocuSign Apps & Keys (self-service now; no 20-call rule).
+Everything below step 3 is driven from **Developer portal → Production cutover** (`/portal/dev`); the endpoints
+are `POST /api/dev/docusign/test/`, `GET|POST /api/dev/docusign/connect/`, `GET|POST /api/dev/docusign/account-settings/`.
+
+1. DocuSign production account (paid plan): Apps & Keys → add an integration key, generate an RSA keypair, note the
+   API user's **User ID** (the impersonated sender) and the **Account ID**. Add
+   `https://www.apexintegrations.ai/portal/dev` as a redirect URI on the key (the consent link returns there).
+2. Server `.env`: `DOCUSIGN_PROD_CLIENT_ID`, `DOCUSIGN_PROD_USER_ID`, `DOCUSIGN_PROD_ACCOUNT_ID`; private key as
+   `private_key_prod.pem` next to `manage.py`. `DOCUSIGN_PROD_BASE_PATH` is optional — the account-specific host
+   (na2/na3/na4…) is resolved from userinfo and cached per process. Reload.
+3. **Grant consent** (link on the Production card): sign in as the API user, Allow. Until then every call raises
+   `DocuSignConsentRequired`; the dev endpoints return `{consent_required: true, consent_url}` (502).
+4. **Test connection** on Production: JWT + userinfo, confirms the account id is one of the user's accounts.
+5. **Signing settings → Compare / Copy demo → production**: `signDateFormat`, `signTimeFormat`, `signTimeShowAmPm`,
+   `signDateTimeAccountTimezoneOverride`, `attachCompletedEnvelope` (`ACCOUNT_SETTINGS_KEYS`). The account
+   **time zone** (Mountain) is not exposed on that endpoint — set it once in DocuSign Admin → Regional Settings.
+6. **Connect webhook → Check production / Create webhook**: creates a `Docuflow` Connect configuration
+   (envelope-completed, JSON restv2.1, documents included, HMAC on, all users, log on) pointing at
+   `DOCUSIGN_WEBHOOK_URL` (default `https://www.apexintegrations.ai/api/contracts/webhook/`). Idempotent.
+   If creation fails with a plan error, Connect isn't enabled on the account — ask DocuSign support.
+   Then Admin → Connect → **Keys**: add an HMAC key and put it in `DOCUSIGN_CONNECT_HMAC_KEYS` (comma-separated
+   for rotation). When that var is set the webhook rejects unsigned/mis-signed posts with 401; when unset it
+   accepts everything (demo behaviour today — the demo config has HMAC off).
+7. **Pilot**: flag one user PROD (Developer → Users), send one real packet, confirm it files as fully executed
+   (webhook, or **Check now** on the deal which reconciles), then flip the master switch.
+8. **Go-live** promotion of the key in Apps & Keys (self-service).
 Pricing note: envelopes are per company (one API user sends everything); a deal is ~2–4 envelopes.
 
 ## Scheduled tasks (PythonAnywhere → Tasks)

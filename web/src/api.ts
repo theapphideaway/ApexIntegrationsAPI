@@ -7,9 +7,12 @@ const REFRESH = 'portal_refresh'
 export type Me = { id: string; email: string; first_name: string; last_name: string; role: 'admin' | 'tc' | 'agent'; organization: string | null; is_superuser?: boolean; docusign_production?: boolean; docusign_env?: 'demo' | 'production' }
 export type Team = { id: string; name: string; plan_type: string; is_active: boolean; created_at: string; member_count?: number; deal_count?: number }
 export type PortalUser = Me & { phone_number: string | null; organization_name: string | null; deal_count: number; fub_connected: boolean; fub_account_id?: string; is_active: boolean }
+export type ConnectConfig = { connect_id: string; name: string; url: string; events: string[]; include_documents: string; include_hmac: string; all_users: string; allow_envelope_publish: string; delivery_mode: string; enable_log: string; is_ours: boolean }
+export type ConnectStatus = { env: string; webhook_url: string; hmac_configured: boolean; configurations: ConnectConfig[] }
+export type AccountSettingsCompare = { keys: string[]; environments: Record<string, Record<string, string> | { error: string } | null>; in_sync: boolean }
 export type DevSettings = {
   settings: Record<string, unknown>; defaults: Record<string, unknown>
-  docusign: { current: 'demo' | 'production'; master_production: boolean; production_users: number; environments: Record<string, { auth_server: string; base_path: string; client_id_set: boolean; user_id_set: boolean; account_id_set: boolean; private_key_present: boolean; private_key_path: string; configured: boolean }> }
+  docusign: { current: 'demo' | 'production'; master_production: boolean; production_users: number; webhook_url: string; hmac_configured: boolean; environments: Record<string, { auth_server: string; base_path: string; client_id_set: boolean; user_id_set: boolean; account_id_set: boolean; private_key_present: boolean; private_key_path: string; configured: boolean; consent_url: string | null }> }
   server: { debug: boolean; db_engine: string }
 }
 
@@ -77,7 +80,9 @@ async function request<T>(path: string, init: RequestInit = {}, retry = true): P
   consoleBus.emit({ method, path, status: r.status, ms: performance.now() - started, request: reqBody, response: parsed })
   if (!r.ok) {
     const msg = typeof parsed === 'object' && parsed && 'error' in (parsed as object) ? String((parsed as { error: unknown }).error) : text || `HTTP ${r.status}`
-    throw new Error(msg)
+    const err = new Error(msg) as Error & { body?: unknown }
+    err.body = parsed
+    throw err
   }
   if (r.status === 204 || !text) return undefined as T
   return parsed as T
@@ -158,6 +163,10 @@ export const api = {
     settings: () => request<DevSettings>('/api/dev/settings/'),
     patchSettings: (settings: Record<string, unknown>) => request<DevSettings>('/api/dev/settings/', { method: 'PATCH', body: JSON.stringify({ settings }) }),
     testDocuSign: (env?: string) => request<Record<string, unknown>>('/api/dev/docusign/test/', { method: 'POST', body: JSON.stringify({ env }) }),
+    connectStatus: (env: string) => request<ConnectStatus>(`/api/dev/docusign/connect/?env=${env}`),
+    ensureConnect: (env: string) => request<{ env: string; created: boolean; configuration: ConnectConfig | null }>('/api/dev/docusign/connect/', { method: 'POST', body: JSON.stringify({ env }) }),
+    accountSettings: () => request<AccountSettingsCompare>('/api/dev/docusign/account-settings/'),
+    syncAccountSettings: (source: string, target: string) => request<{ source: string; target: string; values: Record<string, string>; applied: Record<string, string> }>('/api/dev/docusign/account-settings/', { method: 'POST', body: JSON.stringify({ source, target }) }),
     teams: () => request<Team[]>('/api/dev/teams/'),
     createTeam: (body: { name: string; plan_type?: string }) => request<Team>('/api/dev/teams/', { method: 'POST', body: JSON.stringify(body) }),
     patchTeam: (id: string, body: Partial<Team>) => request<Team>(`/api/dev/teams/${id}/`, { method: 'PATCH', body: JSON.stringify(body) }),

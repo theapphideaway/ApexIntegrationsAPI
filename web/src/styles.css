@@ -296,3 +296,5 @@ textarea.code{width:100%;font-family:ui-monospace,SFMono-Regular,Menlo,monospace
 .testbadge.big{font-size:12px;padding:3px 8px;background:rgba(251,191,36,.18);color:#fcd34d;border-color:rgba(251,191,36,.5)}
 .dealrow.test{border-left:4px solid #fcd34d}
 button.primary.live{background:var(--bad)}button.primary.live:hover{background:#991b1b}
+
+.steps{margin:0;padding-left:20px;display:grid;gap:10px;font-size:13px}.steps li{line-height:1.5}.steps code{font-size:12px;background:var(--surface-2);padding:1px 5px;border-radius:4px}.steps .table{margin-top:6px}

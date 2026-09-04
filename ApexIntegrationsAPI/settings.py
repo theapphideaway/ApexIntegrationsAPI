@@ -195,6 +195,12 @@ AWS_S3_ADDRESSING_STYLE = 'virtual'
 AWS_S3_ENDPOINT_URL = 'https://s3.us-east-2.amazonaws.com'
 FUB_CLIENT_ID = os.environ.get('FUB_CLIENT_ID', 'fallback_id_if_missing')
 FUB_CLIENT_SECRET = os.environ.get('FUB_CLIENT_SECRET', 'fallback_secret_if_missing')
+# --- DocuSign (read directly by docusign_service.py) ---
+# Demo:       DOCUSIGN_CLIENT_ID / DOCUSIGN_USER_ID / DOCUSIGN_ACCOUNT_ID + private_key.pem
+# Production: DOCUSIGN_PROD_CLIENT_ID / DOCUSIGN_PROD_USER_ID / DOCUSIGN_PROD_ACCOUNT_ID + private_key_prod.pem
+#             DOCUSIGN_PROD_BASE_PATH optional (resolved from userinfo when unset)
+# DOCUSIGN_CONNECT_HMAC_KEYS: comma-separated Connect HMAC keys — when set, unsigned/mis-signed webhooks are rejected.
+# DOCUSIGN_WEBHOOK_URL / DOCUSIGN_CONSENT_REDIRECT: override the defaults (www.apexintegrations.ai).
 # Optional: FUB system key (X-System-Key) — enables HMAC verification of inbound webhooks.
 FUB_SYSTEM_KEY = os.environ.get('FUB_SYSTEM_KEY', '')
 

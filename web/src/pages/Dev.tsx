@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api, type DevSettings, type Team, type PortalUser, type Me } from '../api'
+import { api, type DevSettings, type Team, type PortalUser, type Me, type ConnectStatus, type AccountSettingsCompare } from '../api'
 import { Link, useLocation } from 'react-router-dom'
 import ApiExplorer from './ApiExplorer'
 
@@ -71,13 +71,18 @@ function DevOverview({ me }: { me: Me }) {
                 <li className={e.account_id_set ? 'ok' : 'bad'}>Account ID</li>
                 <li className={e.private_key_present ? 'ok' : 'bad'}>RSA key · {e.private_key_path}</li>
               </ul>
-              <button className="link" disabled={!e.configured || busy !== null} onClick={async () => { setBusy('test'); setTestResult(null); try { setTestResult(JSON.stringify(await api.dev.testDocuSign(env), null, 2)) } catch (err) { setTestResult(String(err)) } finally { setBusy(null) } }}>Test connection</button>
+              <div className="row">
+                <button className="link" disabled={!e.configured || busy !== null} onClick={async () => { setBusy('test'); setTestResult(null); try { setTestResult(JSON.stringify(await api.dev.testDocuSign(env), null, 2)) } catch (err) { setTestResult(String(err)) } finally { setBusy(null) } }}>Test connection</button>
+                {e.consent_url && <a className="link" href={e.consent_url} target="_blank" rel="noreferrer" title="One-time JWT consent: sign in as the API user and click Allow">Grant consent ↗</a>}
+              </div>
             </div>
           )})}
         </div>
         {testResult && <pre className="result">{testResult}</pre>}
-        <p className="muted small">Secrets live only in the server .env. Production needs its own integration key, consent, RSA key (private_key_prod.pem), account-specific base URL (DOCUSIGN_PROD_BASE_PATH), the account settings (signing date/time, MST), and a Connect webhook pointing at the same URL as demo.</p>
+        <p className="muted small">Secrets live only in the server .env. Production needs its own integration key, consent, RSA key (private_key_prod.pem) and account ID; the base URL is resolved automatically unless DOCUSIGN_PROD_BASE_PATH is set.</p>
       </section>
+
+      <Cutover ds={ds} busy={busy} setBusy={setBusy} setError={setError} />
 
       <div className="grid">
         <section className="card">
@@ -144,5 +149,56 @@ function DevOverview({ me }: { me: Me }) {
         </form>
       </section>
     </>
+  )
+}
+
+
+function Cutover({ ds, busy, setBusy, setError }: { ds: DevSettings['docusign']; busy: string | null; setBusy: (b: string | null) => void; setError: (e: string | null) => void }) {
+  const [connect, setConnect] = useState<ConnectStatus | null>(null)
+  const [acct, setAcct] = useState<AccountSettingsCompare | null>(null)
+  const [msg, setMsg] = useState<string | null>(null)
+  const prod = ds.environments.production
+  const mine = connect?.configurations.filter((c) => c.is_ours) ?? []
+
+  async function go(label: string, fn: () => Promise<void>) {
+    setBusy(label); setError(null); setMsg(null)
+    try { await fn() } catch (e) { const err = e as { body?: { consent_url?: string }; message?: string }; setError(String(err?.message ?? e)); if (err?.body?.consent_url) setMsg(`Consent required — open: ${err.body.consent_url}`) } finally { setBusy(null) }
+  }
+  const val = (env: string, k: string) => { const e = acct?.environments[env]; return e && !('error' in e) ? String(e[k] ?? '—') : (e && 'error' in e ? '⚠ ' + e.error : '—') }
+
+  return (
+    <section className="card" style={{ marginBottom: 20 }}>
+      <div className="cardhead"><h2>Production cutover</h2>{prod.configured ? <span className="status ok">credentials on server</span> : <span className="status warn">waiting on credentials</span>}</div>
+      {msg && <p className="notice">{msg}</p>}
+      <ol className="steps">
+        <li><b>Credentials.</b> DOCUSIGN_PROD_CLIENT_ID / USER_ID / ACCOUNT_ID + private_key_prod.pem in the server .env, then reload. {prod.configured ? '✓' : '(not yet)'}</li>
+        <li><b>Consent.</b> Once, signed in to DocuSign as the API user: {prod.consent_url ? <a href={prod.consent_url} target="_blank" rel="noreferrer">grant consent ↗</a> : <span className="muted">needs the client id first</span>}. The redirect URI must be listed on the integration key.</li>
+        <li><b>Test connection</b> on the Production card above. It should name the API user and show the account id as a match.</li>
+        <li><b>Signing settings.</b> Date/time stamps must match demo (M/d/yyyy, h:mm AM/PM, account timezone override, attach completed envelope). The account time zone itself (Mountain) is set once in DocuSign Admin → Regional Settings.
+          <div className="row">
+            <button className="link" disabled={busy !== null} onClick={() => go('acct', async () => setAcct(await api.dev.accountSettings()))}>Compare</button>
+            <button className="link" disabled={busy !== null || !prod.configured} onClick={() => { if (!confirm('Copy the signing settings from demo onto the PRODUCTION account?')) return; go('acct-sync', async () => { await api.dev.syncAccountSettings('demo', 'production'); setAcct(await api.dev.accountSettings()) }) }}>Copy demo → production</button>
+            {acct && <span className={`status ${acct.in_sync ? 'ok' : 'warn'}`}>{acct.in_sync ? 'in sync' : 'differs'}</span>}
+          </div>
+          {acct && <table className="table compact"><thead><tr><th>Setting</th><th>Demo</th><th>Production</th></tr></thead>
+            <tbody>{acct.keys.map((k) => <tr key={k}><td className="small">{k}</td><td className="small">{val('demo', k)}</td><td className="small">{val('production', k)}</td></tr>)}</tbody></table>}
+        </li>
+        <li><b>Connect webhook</b> → <code>{ds.webhook_url}</code> (envelope-completed, JSON, PDFs included, HMAC on). HMAC verification on the server: {ds.hmac_configured ? <span className="status ok">on</span> : <span className="status warn">off — set DOCUSIGN_CONNECT_HMAC_KEYS</span>}
+          <div className="row">
+            {(['demo', 'production'] as const).map((env) => <button key={env} className="link" disabled={busy !== null || !ds.environments[env].configured} onClick={() => go('connect', async () => setConnect(await api.dev.connectStatus(env)))}>Check {env}</button>)}
+            {connect && mine.length === 0 && <button className="link" disabled={busy !== null} onClick={() => { if (!confirm(`Create the Docuflow webhook on the ${connect.env} DocuSign account?`)) return; go('connect-create', async () => { await api.dev.ensureConnect(connect.env); setConnect(await api.dev.connectStatus(connect.env)) }) }}>Create webhook on {connect.env}</button>}
+          </div>
+          {connect && <div className="small">
+            {connect.configurations.length === 0 && <p className="muted">No Connect configurations on {connect.env}. If “Create” fails, Connect isn’t enabled on the plan — ask DocuSign support to enable it.</p>}
+            {connect.configurations.map((c) => <div key={c.connect_id} className="muted" style={{ marginTop: 4 }}>
+              {c.is_ours ? '✓' : '·'} <b>{c.name}</b> #{c.connect_id} → {c.url} · events {c.events.join(', ') || '—'} · documents {c.include_documents} · HMAC {c.include_hmac} · all users {c.all_users}
+              {c.is_ours && c.include_hmac !== 'true' && <span className="status warn" style={{ marginLeft: 6 }}>HMAC off in DocuSign</span>}
+            </div>)}
+          </div>}
+        </li>
+        <li><b>Pilot.</b> Flag one user PROD in Users below, send one real packet, confirm it lands as fully executed, then flip the master switch.</li>
+        <li><b>Go-live.</b> Promote the integration key in DocuSign Apps &amp; Keys once the pilot envelope has completed.</li>
+      </ol>
+    </section>
   )
 }

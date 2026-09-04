@@ -7,6 +7,28 @@ from AccountsAdmin.pdf_service import PDFGenerationService
 from ApexIntegrationsAPI import settings
 
 
+class DocuSignConsentRequired(Exception):
+    """JWT impersonation refused: the API user has not granted consent to the
+    integration key yet. `.url` is the one-time consent link."""
+    def __init__(self, env, url):
+        super().__init__(f"DocuSign {env}: the API user has not granted consent for this integration key yet. "
+                         f"Open the consent link (signed in as that user) and try again.")
+        self.env = env
+        self.url = url
+
+
+# Account settings we keep identical on every environment. Signing date/time
+# stamps (RE-21 acceptance) rely on these; copied demo → production by the
+# dev portal instead of clicking through DocuSign admin.
+ACCOUNT_SETTINGS_KEYS = (
+    "sign_date_format", "sign_time_format", "sign_time_show_am_pm",
+    "sign_date_time_account_timezone_override", "attach_completed_envelope",
+)
+CONNECT_NAME = "Docuflow"
+# Per-env cache of the account-specific REST base path resolved from userinfo.
+_RESOLVED_BASE_PATHS = {}
+
+
 class DocuSignService:
     @staticmethod
     def env_config(env: str) -> dict:
@@ -20,7 +42,8 @@ class DocuSignService:
                 "user_id": os.environ.get("DOCUSIGN_PROD_USER_ID"),
                 "account_id": os.environ.get("DOCUSIGN_PROD_ACCOUNT_ID"),
                 "auth_server": "account.docusign.com",
-                "base_path": os.environ.get("DOCUSIGN_PROD_BASE_PATH", "https://na4.docusign.net/restapi"),
+                # Account-specific (na2/na3/na4/eu…). Leave unset to resolve it from userinfo.
+                "base_path": os.environ.get("DOCUSIGN_PROD_BASE_PATH") or None,
                 "private_key_path": os.path.join(settings.BASE_DIR, os.environ.get("DOCUSIGN_PROD_PRIVATE_KEY", "private_key_prod.pem")),
             }
         return {
@@ -53,6 +76,28 @@ class DocuSignService:
             return "production"
         return "demo"
 
+    @staticmethod
+    def webhook_url() -> str:
+        return os.environ.get("DOCUSIGN_WEBHOOK_URL", "https://www.apexintegrations.ai/api/contracts/webhook/")
+
+    @staticmethod
+    def connect_hmac_keys() -> list:
+        """Connect HMAC keys (comma-separated env var). Empty = signatures not verified."""
+        raw = os.environ.get("DOCUSIGN_CONNECT_HMAC_KEYS", "") or os.environ.get("DOCUSIGN_CONNECT_HMAC_KEY", "")
+        return [k.strip() for k in raw.split(",") if k.strip()]
+
+    @classmethod
+    def consent_url(cls, env: str) -> str:
+        """One-time JWT consent link. The redirect URI must be registered on the
+        integration key (Apps & Keys → Redirect URIs). The API user signs in and
+        clicks Allow; nothing comes back to us that we need."""
+        from urllib.parse import urlencode
+        cfg = cls.env_config(env)
+        redirect = os.environ.get("DOCUSIGN_CONSENT_REDIRECT", "https://www.apexintegrations.ai/portal/dev")
+        q = urlencode({"response_type": "code", "scope": "signature impersonation",
+                       "client_id": cfg["client_id"] or "", "redirect_uri": redirect})
+        return f"https://{cfg['auth_server']}/oauth/auth?{q}"
+
     def __init__(self, env: str = None):
         cfg = self.env_config(env or self.current_env())
         self.env = cfg["env"]
@@ -61,7 +106,26 @@ class DocuSignService:
         self.account_id = cfg["account_id"]
         self.private_key_path = cfg["private_key_path"]
         self.auth_server = cfg["auth_server"]
-        self.base_path = cfg["base_path"]
+        self._base_path = cfg["base_path"] or _RESOLVED_BASE_PATHS.get(self.env)
+
+    @property
+    def base_path(self) -> str:
+        """Account-specific REST host. Demo is fixed; production is either
+        DOCUSIGN_PROD_BASE_PATH or resolved once from userinfo."""
+        if not self._base_path:
+            self._resolve_base_path(self._get_access_token())
+        return self._base_path
+
+    def _resolve_base_path(self, access_token):
+        api_client = ApiClient()
+        api_client.set_base_path(self.auth_server)
+        info = api_client.get_user_info(access_token)
+        match = next((a for a in (info.accounts or []) if a.account_id == self.account_id), None)
+        if match is None:
+            raise RuntimeError(f"DocuSign {self.env}: account {self.account_id} is not one of the API user's accounts.")
+        self._base_path = f"{match.base_uri.rstrip('/')}/restapi"
+        _RESOLVED_BASE_PATHS[self.env] = self._base_path
+        return info
 
     def _get_access_token(self):
         """Authenticates with DocuSign via JWT and returns a temporary access token."""
@@ -71,22 +135,29 @@ class DocuSignService:
         with open(self.private_key_path, "rb") as key_file:
             private_key_bytes = key_file.read()
 
-        token_response = api_client.request_jwt_user_token(
-            client_id=self.client_id,
-            user_id=self.user_id,
-            oauth_host_name=self.auth_server,
-            private_key_bytes=private_key_bytes,
-            expires_in=3600,
-            scopes=["signature", "impersonation"]
-        )
+        try:
+            token_response = api_client.request_jwt_user_token(
+                client_id=self.client_id,
+                user_id=self.user_id,
+                oauth_host_name=self.auth_server,
+                private_key_bytes=private_key_bytes,
+                expires_in=3600,
+                scopes=["signature", "impersonation"]
+            )
+        except Exception as e:
+            if "consent_required" in str(e):
+                raise DocuSignConsentRequired(self.env, self.consent_url(self.env)) from e
+            raise
         return token_response.access_token
 
     def test_connection(self) -> dict:
         """Dev-portal check: JWT auth + userinfo for the selected environment."""
         access_token = self._get_access_token()
-        api_client = ApiClient()
-        api_client.set_base_path(self.auth_server)
-        info = api_client.get_user_info(access_token)
+        info = self._resolve_base_path(access_token) if not self._base_path else None
+        if info is None:
+            api_client = ApiClient()
+            api_client.set_base_path(self.auth_server)
+            info = api_client.get_user_info(access_token)
         accounts = [{
             "account_id": a.account_id, "name": a.account_name, "base_uri": a.base_uri, "is_default": a.is_default,
         } for a in (info.accounts or [])]
@@ -96,11 +167,72 @@ class DocuSignService:
             "configured_account_matches": any(a["account_id"] == self.account_id for a in accounts),
         }
 
-    def _envelopes_api(self):
+    def _api_client(self):
         api_client = ApiClient()
+        token = self._get_access_token()
         api_client.host = self.base_path
-        api_client.set_default_header("Authorization", f"Bearer {self._get_access_token()}")
-        return EnvelopesApi(api_client)
+        api_client.set_default_header("Authorization", f"Bearer {token}")
+        return api_client
+
+    # ---- Cutover helpers (dev portal) ----
+    def account_settings(self) -> dict:
+        """The signing-stamp settings we care about, as {snake_key: value}."""
+        from docusign_esign import AccountsApi
+        info = AccountsApi(self._api_client()).list_settings(account_id=self.account_id)
+        return {k: getattr(info, k, None) for k in ACCOUNT_SETTINGS_KEYS}
+
+    def apply_account_settings(self, values: dict) -> dict:
+        """Write the whitelisted settings (values from account_settings() of another env)."""
+        from docusign_esign import AccountsApi, AccountSettingsInformation
+        clean = {k: v for k, v in values.items() if k in ACCOUNT_SETTINGS_KEYS and v not in (None, "")}
+        if not clean:
+            return self.account_settings()
+        AccountsApi(self._api_client()).update_settings(
+            account_id=self.account_id, account_settings_information=AccountSettingsInformation(**clean))
+        return self.account_settings()
+
+    def connect_configurations(self) -> list:
+        """Connect (webhook) configurations on this account, flagged if they point at us."""
+        from docusign_esign import ConnectApi
+        result = ConnectApi(self._api_client()).list_configurations(account_id=self.account_id)
+        ours = self.webhook_url().rstrip("/")
+        out = []
+        for c in (result.configurations or []):
+            url = (c.url_to_publish_to or "").rstrip("/")
+            out.append({
+                "connect_id": c.connect_id, "name": c.name, "url": c.url_to_publish_to,
+                "events": list(c.events or []) or list(c.envelope_events or []),
+                "include_documents": c.include_documents, "include_hmac": c.include_hmac,
+                "all_users": c.all_users, "allow_envelope_publish": c.allow_envelope_publish,
+                "delivery_mode": c.delivery_mode, "enable_log": c.enable_log,
+                "is_ours": url == ours,
+            })
+        return out
+
+    def ensure_connect_webhook(self) -> dict:
+        """Create the envelope-completed webhook (JSON, documents included,
+        HMAC-signed, all users) if this account doesn't have one pointing at
+        our URL. Idempotent: returns the existing one otherwise."""
+        from docusign_esign import ConnectApi, ConnectCustomConfiguration, ConnectEventData
+        existing = [c for c in self.connect_configurations() if c["is_ours"]]
+        if existing:
+            return {"created": False, "configuration": existing[0]}
+        cfg = ConnectCustomConfiguration(
+            name=CONNECT_NAME, url_to_publish_to=self.webhook_url(),
+            configuration_type="custom", delivery_mode="SIM",
+            events=["envelope-completed"],
+            event_data=ConnectEventData(version="restv2.1", format="json", include_data=["documents"]),
+            include_documents="true", include_hmac="true", include_time_zone_information="true",
+            include_envelope_void_reason="true", include_certificate_of_completion="false",
+            all_users="true", allow_envelope_publish="true", enable_log="true",
+            requires_acknowledgement="true", use_soap_interface="false",
+        )
+        ConnectApi(self._api_client()).create_configuration(account_id=self.account_id, connect_custom_configuration=cfg)
+        ours = [c for c in self.connect_configurations() if c["is_ours"]]
+        return {"created": True, "configuration": ours[0] if ours else None}
+
+    def _envelopes_api(self):
+        return EnvelopesApi(self._api_client())
 
     def envelope_status(self, envelope_id: str) -> dict:
         """Where an envelope stands, per recipient — for 'who hasn't signed?',

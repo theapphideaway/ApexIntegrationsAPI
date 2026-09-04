@@ -76,6 +76,8 @@ urlpatterns = [
     # Developer / super-admin portal API (superuser only).
     path('api/dev/settings/', dev_views.DevSettingsView.as_view(), name='dev-settings'),
     path('api/dev/docusign/test/', dev_views.DevDocuSignTestView.as_view(), name='dev-docusign-test'),
+    path('api/dev/docusign/connect/', dev_views.DevDocuSignConnectView.as_view(), name='dev-docusign-connect'),
+    path('api/dev/docusign/account-settings/', dev_views.DevDocuSignAccountSettingsView.as_view(), name='dev-docusign-account-settings'),
     path('api/dev/teams/', dev_views.DevTeamsView.as_view(), name='dev-teams'),
     path('api/dev/teams/<uuid:pk>/', dev_views.DevTeamDetailView.as_view(), name='dev-team-detail'),
     path('api/dev/users/', dev_views.DevUsersView.as_view(), name='dev-users'),

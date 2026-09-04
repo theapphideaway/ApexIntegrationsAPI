@@ -7,7 +7,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .docusign_service import DocuSignService
+from .docusign_service import DocuSignService, DocuSignConsentRequired, ACCOUNT_SETTINGS_KEYS
 from .models import CustomUser, Organization, Deal
 from .serializers import CustomUserSerializer, OrganizationSerializer
 from .settings_service import all_settings, set_setting, DEFAULTS
@@ -31,7 +31,17 @@ def _docusign_status():
         }
         e = out["environments"][env]
         e["configured"] = all([e["client_id_set"], e["user_id_set"], e["account_id_set"], e["private_key_present"]])
+        e["base_path"] = cfg["base_path"] or "(resolved from userinfo)"
+        e["consent_url"] = DocuSignService.consent_url(env) if cfg["client_id"] else None
+    out["webhook_url"] = DocuSignService.webhook_url()
+    out["hmac_configured"] = bool(DocuSignService.connect_hmac_keys())
     return out
+
+
+def _ds_error(env, e):
+    if isinstance(e, DocuSignConsentRequired):
+        return Response({"env": env, "error": str(e), "consent_required": True, "consent_url": e.url}, status=502)
+    return Response({"env": env, "error": str(e)}, status=502)
 
 
 class DevSettingsView(APIView):
@@ -62,7 +72,61 @@ class DevDocuSignTestView(APIView):
         try:
             return Response(DocuSignService(env=env).test_connection())
         except Exception as e:
-            return Response({"env": env, "error": str(e)}, status=502)
+            return _ds_error(env, e)
+
+
+class DevDocuSignConnectView(APIView):
+    """GET  /api/dev/docusign/connect/?env=  — Connect (webhook) configurations on that account.
+    POST /api/dev/docusign/connect/  {env} — create ours (envelope-completed, JSON + PDFs, HMAC) if missing."""
+    permission_classes = [IsSuperuser]
+
+    def get(self, request):
+        env = request.query_params.get("env") or DocuSignService.current_env()
+        try:
+            return Response({"env": env, "webhook_url": DocuSignService.webhook_url(),
+                             "hmac_configured": bool(DocuSignService.connect_hmac_keys()),
+                             "configurations": DocuSignService(env=env).connect_configurations()})
+        except Exception as e:
+            return _ds_error(env, e)
+
+    def post(self, request):
+        env = request.data.get("env") or DocuSignService.current_env()
+        try:
+            result = DocuSignService(env=env).ensure_connect_webhook()
+            return Response({"env": env, **result}, status=201 if result["created"] else 200)
+        except Exception as e:
+            return _ds_error(env, e)
+
+
+class DevDocuSignAccountSettingsView(APIView):
+    """GET  /api/dev/docusign/account-settings/ — signing-stamp settings on demo AND production, side by side.
+    POST /api/dev/docusign/account-settings/ {source:'demo', target:'production'} — copy them across."""
+    permission_classes = [IsSuperuser]
+
+    def get(self, request):
+        out = {"keys": list(ACCOUNT_SETTINGS_KEYS), "environments": {}}
+        for env in ("demo", "production"):
+            try:
+                out["environments"][env] = DocuSignService(env=env).account_settings() \
+                    if _docusign_status()["environments"][env]["configured"] else None
+            except Exception as e:
+                out["environments"][env] = {"error": str(e)}
+        d, p = out["environments"].get("demo"), out["environments"].get("production")
+        out["in_sync"] = bool(d and p and "error" not in d and "error" not in p and
+                              all(d.get(k) == p.get(k) for k in ACCOUNT_SETTINGS_KEYS))
+        return Response(out)
+
+    def post(self, request):
+        source = request.data.get("source") or "demo"
+        target = request.data.get("target") or "production"
+        if source == target or source not in ("demo", "production") or target not in ("demo", "production"):
+            return Response({"error": "source and target must be different environments"}, status=400)
+        try:
+            values = DocuSignService(env=source).account_settings()
+            applied = DocuSignService(env=target).apply_account_settings(values)
+            return Response({"source": source, "target": target, "values": values, "applied": applied})
+        except Exception as e:
+            return _ds_error(target, e)
 
 
 class DevTeamsView(APIView):
